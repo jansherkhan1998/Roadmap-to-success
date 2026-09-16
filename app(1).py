@@ -1,245 +1,889 @@
-import streamlit as st
-from google import genai
+import os
+import json
 from datetime import date
 
+import streamlit as st
+from google import genai
+from google.genai import types
+
+
+# ============================================================
+# PAGE CONFIG
+# ============================================================
+
 st.set_page_config(
-    page_title="Pakistani Entrance Test Preparation Roadmap",
+    page_title="PakPrep AI",
     page_icon="📚",
     layout="wide"
 )
 
-st.title("📚 AI Entrance Test Preparation Roadmap")
-st.write(
-    "Generate a personalized preparation roadmap for Pakistani "
-    "university, medical, engineering, defence and aptitude entrance tests."
-)
 
-with st.sidebar:
-    st.header("⚙️ Preparation Settings")
+# ============================================================
+# AVAILABLE TESTS
+# ============================================================
 
-    target_test = st.selectbox(
-        "Target Test",
-        [
-            "MDCAT",
-            "ECAT / Engineering Tests",
-            "ISSB Initial Computer Test",
-            "Army Medical College (AMC) Test",
-            "NUST NET",
-            "FAST",
-            "NTS NAT",
-            "Custom / Other Entrance Test"
-        ]
+EXAMS = [
+    "MDCAT",
+    "ECAT",
+    "NUST NET",
+    "NTS NAT",
+    "NTS GAT",
+    "ISSB Initial Test",
+    "FAST-NU Admission Test",
+    "COMSATS Admission Test",
+    "ETEA Engineering",
+    "ETEA Medical",
+    "UET Entrance Test",
+    "Other / Custom Test"
+]
+
+LEVELS = [
+    "Beginner",
+    "Intermediate",
+    "Advanced"
+]
+
+SUBJECTS = [
+    "Mathematics",
+    "Physics",
+    "Chemistry",
+    "Biology",
+    "English",
+    "IQ / Analytical Reasoning",
+    "General Knowledge",
+    "Mixed"
+]
+
+
+# ============================================================
+# GEMINI API
+# ============================================================
+
+def get_api_key():
+    """Read the Gemini API key from Streamlit secrets or an environment variable."""
+    try:
+        key = st.secrets.get("GEMINI_API_KEY")
+    except Exception:
+        key = None
+
+    return key or os.getenv("GEMINI_API_KEY")
+
+
+
+@st.cache_resource
+def get_client(api_key):
+
+    return genai.Client(
+        api_key=api_key
     )
 
-    custom_test = ""
-    if target_test == "Custom / Other Entrance Test":
-        custom_test = st.text_input(
-            "Enter Test Name",
-            placeholder="e.g., GIKI, PIEAS, UET Taxila"
+
+def ask_gemini(prompt, json_mode=False):
+
+    api_key = get_api_key()
+
+    if not api_key:
+        raise RuntimeError(
+            "Gemini API key is missing. "
+            "Add GEMINI_API_KEY to Streamlit Secrets."
         )
 
-    target_date = st.date_input(
-        "Target Exam Date",
+    client = get_client(api_key)
+
+    config = types.GenerateContentConfig(
+        temperature=0.7,
+        response_mime_type="application/json"
+        if json_mode
+        else "text/plain"
+    )
+
+    response = client.models.generate_content(
+        model="gemini-3.6-flash",
+        contents=prompt,
+        config=config
+    )
+
+    return response.text
+
+
+# ============================================================
+# JSON CLEANER
+# ============================================================
+
+def clean_json(text):
+
+    text = text.strip()
+
+    if text.startswith("```"):
+
+        lines = text.splitlines()
+
+        if lines[-1].strip().startswith("```"):
+            lines = lines[1:-1]
+        else:
+            lines = lines[1:]
+
+        text = "\n".join(lines).strip()
+
+    return json.loads(text)
+
+
+# ============================================================
+# ROADMAP PROMPT
+# ============================================================
+
+def roadmap_prompt(
+    exam,
+    exam_date,
+    level,
+    hours,
+    focus
+):
+
+    days = max(
+        1,
+        (exam_date - date.today()).days
+    )
+
+    return f"""
+You are an expert Pakistan entrance-test preparation planner.
+
+Create a realistic, student-friendly preparation roadmap.
+
+Exam:
+{exam}
+
+Exam Date:
+{exam_date.isoformat()}
+
+Days Remaining:
+{days}
+
+Student Level:
+{level}
+
+Available Study Hours Per Day:
+{hours}
+
+Priority / Focus:
+{focus or "No special focus"}
+
+IMPORTANT:
+
+Do not invent official syllabus, dates,
+eligibility rules, marks, or test patterns.
+
+If an exam detail can vary by year or institution,
+tell the student to verify it from the current
+official authority.
+
+Make the roadmap useful even if the exact
+official syllabus is not supplied.
+
+Adapt the plan according to the student's level.
+
+The roadmap should include:
+
+1. Foundation building
+2. Concept development
+3. Topic-wise practice
+4. MCQ practice
+5. Timed practice
+6. Mock tests
+7. Error-log review
+8. Spaced revision
+9. Weak-area improvement
+10. Final revision
+11. Exam-day strategy
+
+Return ONLY valid JSON.
+
+Use exactly this structure:
+
+{{
+    "summary": "string",
+
+    "assumptions": [
+        "string"
+    ],
+
+    "phases": [
+        {{
+            "phase": "string",
+            "duration": "string",
+            "objectives": "string",
+            "daily_plan": "string",
+            "topics": "string",
+            "practice": "string",
+            "revision": "string",
+            "checkpoint": "string"
+        }}
+    ],
+
+    "weekly_template": [
+        "string"
+    ],
+
+    "final_week": [
+        "string"
+    ],
+
+    "exam_day": [
+        "string"
+    ],
+
+    "resources": [
+        "string"
+    ],
+
+    "common_mistakes": [
+        "string"
+    ]
+}}
+
+Make the plan practical and progressively harder.
+"""
+
+
+# ============================================================
+# MCQ PROMPT
+# ============================================================
+
+def mcq_prompt(
+    exam,
+    subject,
+    difficulty,
+    count,
+    level
+):
+
+    return f"""
+Create {count} original multiple-choice practice
+questions for a Pakistani entrance-test preparation app.
+
+Exam:
+{exam}
+
+Subject:
+{subject}
+
+Difficulty:
+{difficulty}
+
+Student Level:
+{level}
+
+These are practice questions.
+
+Do NOT claim that these are official past-paper
+questions.
+
+Do not copy known copyrighted questions.
+
+Avoid ambiguous wording.
+
+Each question must have:
+
+A
+B
+C
+D
+
+Exactly ONE correct answer.
+
+Include a short educational explanation.
+
+Return ONLY valid JSON.
+
+Use exactly this structure:
+
+{{
+    "questions": [
+        {{
+            "question": "Question text",
+            "options": {{
+                "A": "Option A",
+                "B": "Option B",
+                "C": "Option C",
+                "D": "Option D"
+            }},
+            "answer": "A",
+            "explanation": "Short explanation",
+            "topic": "Topic"
+        }}
+    ]
+}}
+
+The answer must be exactly one of:
+
+A
+B
+C
+D
+"""
+
+
+# ============================================================
+# DISPLAY ROADMAP
+# ============================================================
+
+def show_roadmap(data):
+
+    st.subheader("🗺️ Your AI Preparation Roadmap")
+
+    st.info(
+        data.get(
+            "summary",
+            ""
+        )
+    )
+
+    if data.get("assumptions"):
+
+        with st.expander(
+            "Assumptions & Verification Notes"
+        ):
+
+            for item in data["assumptions"]:
+
+                st.write(
+                    "• " + item
+                )
+
+    for phase in data.get(
+        "phases",
+        []
+    ):
+
+        with st.expander(
+            f"{phase.get('phase', 'Phase')} "
+            f"— {phase.get('duration', '')}"
+        ):
+
+            st.markdown(
+                f"**Objectives:** "
+                f"{phase.get('objectives', '')}"
+            )
+
+            st.markdown(
+                f"**Daily Plan:** "
+                f"{phase.get('daily_plan', '')}"
+            )
+
+            st.markdown(
+                f"**Topics:** "
+                f"{phase.get('topics', '')}"
+            )
+
+            st.markdown(
+                f"**Practice:** "
+                f"{phase.get('practice', '')}"
+            )
+
+            st.markdown(
+                f"**Revision:** "
+                f"{phase.get('revision', '')}"
+            )
+
+            st.markdown(
+                f"**Checkpoint:** "
+                f"{phase.get('checkpoint', '')}"
+            )
+
+    if data.get("weekly_template"):
+
+        st.subheader("📅 Weekly Template")
+
+        for i, item in enumerate(
+            data["weekly_template"],
+            1
+        ):
+
+            st.write(
+                f"**Day {i}:** {item}"
+            )
+
+    if data.get("final_week"):
+
+        st.subheader("🔥 Final Week")
+
+        for item in data["final_week"]:
+
+            st.write(
+                "• " + item
+            )
+
+    if data.get("exam_day"):
+
+        st.subheader("🎯 Exam-Day Plan")
+
+        for item in data["exam_day"]:
+
+            st.write(
+                "• " + item
+            )
+
+    if data.get("resources"):
+
+        st.subheader("📚 Resource Guidance")
+
+        for item in data["resources"]:
+
+            st.write(
+                "• " + item
+            )
+
+    if data.get("common_mistakes"):
+
+        st.subheader("⚠️ Common Mistakes")
+
+        for item in data["common_mistakes"]:
+
+            st.write(
+                "• " + item
+            )
+
+
+# ============================================================
+# QUIZ ENGINE
+# ============================================================
+
+def run_quiz(questions):
+
+    if (
+        "quiz_answers" not in st.session_state
+        or len(st.session_state.quiz_answers)
+        != len(questions)
+    ):
+
+        st.session_state.quiz_answers = [
+            None
+            for _ in questions
+        ]
+
+    for i, question in enumerate(
+        questions
+    ):
+
+        st.markdown(
+            f"### Q{i + 1}. "
+            f"{question['question']}"
+        )
+
+        answer = st.radio(
+            "Select an answer",
+
+            options=[
+                "A",
+                "B",
+                "C",
+                "D"
+            ],
+
+            format_func=lambda x,
+            options=question["options"]:
+                f"{x}. {options[x]}",
+
+            key=f"question_{i}",
+
+            index=None
+        )
+
+        st.session_state.quiz_answers[i] = answer
+
+    if st.button(
+        "Submit Test",
+        type="primary"
+    ):
+
+        score = sum(
+            answer == question["answer"]
+            for answer, question
+            in zip(
+                st.session_state.quiz_answers,
+                questions
+            )
+        )
+
+        percentage = (
+            score / len(questions)
+        ) * 100
+
+        st.success(
+            f"Score: {score}/{len(questions)} "
+            f"({percentage:.1f}%)"
+        )
+
+        st.subheader(
+            "📊 Answer Review"
+        )
+
+        for i, question in enumerate(
+            questions
+        ):
+
+            user_answer = (
+                st.session_state.quiz_answers[i]
+            )
+
+            correct_answer = (
+                question["answer"]
+            )
+
+            if user_answer == correct_answer:
+
+                st.write(
+                    f"✅ Q{i + 1}: Correct"
+                )
+
+            else:
+
+                st.write(
+                    f"❌ Q{i + 1}: "
+                    f"Correct answer = "
+                    f"**{correct_answer}**"
+                )
+
+                st.caption(
+                    question["explanation"]
+                )
+
+
+# ============================================================
+# HEADER
+# ============================================================
+
+st.title(
+    "📚 PakPrep AI"
+)
+
+st.caption(
+    "AI-powered preparation roadmaps "
+    "and original practice MCQs for "
+    "Pakistani entrance and aptitude tests."
+)
+
+
+# ============================================================
+# SIDEBAR
+# ============================================================
+
+with st.sidebar:
+
+    st.header(
+        "👨‍🎓 Student Profile"
+    )
+
+    exam = st.selectbox(
+        "Select Test",
+        EXAMS
+    )
+
+    custom_exam = st.text_input(
+        "Custom Test Name",
+        disabled=(
+            exam != "Other / Custom Test"
+        )
+    )
+
+    if (
+        exam == "Other / Custom Test"
+        and custom_exam.strip()
+    ):
+
+        exam_name = custom_exam.strip()
+
+    else:
+
+        exam_name = exam
+
+    exam_date = st.date_input(
+        "Target Test Date",
         min_value=date.today()
     )
 
-    preparation_level = st.selectbox(
-        "Current Preparation Level",
-        ["Beginner", "Intermediate", "Advanced"]
+    level = st.selectbox(
+        "Preparation Level",
+        LEVELS
     )
 
-    study_hours = st.slider(
-        "Daily Available Study Hours",
-        min_value=1,
-        max_value=16,
-        value=6
+    hours = st.slider(
+        "Study Hours Per Day",
+        1,
+        12,
+        4
+    )
+
+    focus = st.text_input(
+        "Special Focus",
+        placeholder="e.g. Physics numericals"
     )
 
     st.divider()
-    st.header("🔑 Gemini API")
 
-    api_key = st.text_input(
-        "Gemini API Key",
-        type="password",
-        placeholder="Enter your Gemini API key"
+    st.caption(
+        "Always verify current syllabus, "
+        "registration dates and official "
+        "test rules from the relevant authority."
     )
 
-    generate_button = st.button(
-        "🚀 Generate Roadmap",
+
+# ============================================================
+# TABS
+# ============================================================
+
+tab1, tab2, tab3 = st.tabs(
+    [
+        "🗺️ Preparation Roadmap",
+        "📝 Practice MCQs",
+        "ℹ️ How It Works"
+    ]
+)
+
+
+# ============================================================
+# ROADMAP TAB
+# ============================================================
+
+with tab1:
+
+    days = max(
+        0,
+        (exam_date - date.today()).days
+    )
+
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric(
+        "Test",
+        exam_name
+    )
+
+    col2.metric(
+        "Days Remaining",
+        days
+    )
+
+    col3.metric(
+        "Level",
+        level
+    )
+
+    if st.button(
+        "🚀 Generate My Complete Roadmap",
         type="primary",
         use_container_width=True
-    )
+    ):
 
-today = date.today()
-remaining_days = (target_date - today).days
+        with st.spinner(
+            "Building your personalized roadmap..."
+        ):
 
-if target_test == "Custom / Other Entrance Test":
-    selected_test = custom_test.strip()
-else:
-    selected_test = target_test
+            try:
 
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    st.metric("Days Remaining", max(remaining_days, 0))
-
-with col2:
-    st.metric("Study Hours / Day", study_hours)
-
-with col3:
-    st.metric("Preparation Level", preparation_level)
-
-def build_prompt(test_name, exam_date, days_remaining, level, hours_per_day):
-    return f"""
-You are an expert Pakistani entrance-test preparation strategist,
-academic planner, and curriculum specialist.
-
-Create a practical personalized preparation roadmap for:
-
-Target Test: {test_name}
-Target Exam Date: {exam_date}
-Days Remaining: {days_remaining}
-Current Preparation Level: {level}
-Daily Available Study Hours: {hours_per_day}
-
-The student is preparing in Pakistan. Tailor the roadmap to commonly
-relevant Pakistani education and entrance-test patterns, including
-PMDC/medical tests, NUMS where applicable, HEC-related aptitude
-patterns, provincial boards, FSc/A-Level preparation, engineering
-entrance tests, and computer-based testing.
-
-Do not invent an official syllabus. If the exact pattern can vary by
-institution or year, clearly state that.
-
-Include:
-
-1. Executive summary
-2. Exam structure and common sections
-3. High-yield subjects and topics in a table
-4. Phase-wise plan:
-   - Syllabus Coverage / Concept Building
-   - Revision / Weak Area Improvement
-   - Mock Practice / Exam Simulation
-5. Day-by-day roadmap. For very long periods, organize it into
-   weekly blocks while providing a detailed repeatable daily template.
-6. Daily study schedule based on {hours_per_day} hours
-7. MCQ and mock-test strategy
-8. Time-management strategy
-9. Negative-marking strategy only if applicable
-10. Computer-based-test strategy where relevant
-11. Weekly performance tracking table
-12. Final 7-day strategy
-13. Exam-day strategy
-14. Top 10 personalized priorities
-15. Five common mistakes to avoid
-16. Five measurable preparation targets
-
-Make the workload realistic. Adapt the balance according to level:
-Beginner = more concepts,
-Intermediate = balanced concepts/revision/practice,
-Advanced = more testing, speed, revision and weak-area correction.
-
-Use clear Markdown, headings, tables and bullet points.
-Avoid vague advice. Give measurable targets.
-Today's date is {today}.
-"""
-
-if generate_button:
-    if not api_key.strip():
-        st.error("❌ Please enter your Gemini API key.")
-        st.stop()
-
-    if target_date <= today:
-        st.error("❌ Please select a future exam date.")
-        st.stop()
-
-    if target_test == "Custom / Other Entrance Test" and not custom_test.strip():
-        st.error("❌ Please enter your custom test name.")
-        st.stop()
-
-    try:
-        with st.spinner("🤖 Generating your personalized roadmap..."):
-            client = genai.Client(api_key=api_key.strip())
-
-            response = client.models.generate_content(
-                model="gemini-3.6-flash",
-                contents=build_prompt(
-                    selected_test,
-                    target_date.strftime("%d %B %Y"),
-                    remaining_days,
-                    preparation_level,
-                    study_hours
+                response = ask_gemini(
+                    roadmap_prompt(
+                        exam_name,
+                        exam_date,
+                        level,
+                        hours,
+                        focus
+                    ),
+                    json_mode=True
                 )
-            )
 
-            roadmap = response.text
+                data = clean_json(
+                    response
+                )
 
-        if not roadmap:
-            st.error("❌ Gemini returned an empty response.")
-            st.stop()
+                st.session_state.roadmap = data
 
-        st.session_state["roadmap"] = roadmap
-        st.session_state["test"] = selected_test
-        st.session_state["exam_date"] = target_date.strftime("%d %B %Y")
+            except Exception as error:
 
-    except Exception as error:
-        st.error("❌ Unable to generate the roadmap.")
-        st.warning(
-            "Check your Gemini API key, internet connection, "
-            "model availability, and try again."
-        )
-        with st.expander("Technical error"):
-            st.code(str(error))
+                st.error(
+                    f"Could not generate roadmap: "
+                    f"{error}"
+                )
 
-if "roadmap" in st.session_state:
-    st.success(
-        f"Roadmap generated for {st.session_state['test']} — "
-        f"Exam Date: {st.session_state['exam_date']}"
-    )
+    if "roadmap" in st.session_state:
 
-    st.subheader("🗺️ Your Personalized Roadmap")
-    st.markdown(st.session_state["roadmap"])
-
-    st.divider()
-    st.subheader("📥 Download Roadmap")
-
-    markdown_data = (
-        "# AI Entrance Test Preparation Roadmap\n\n"
-        f"**Test:** {st.session_state['test']}\n\n"
-        f"**Exam Date:** {st.session_state['exam_date']}\n\n"
-        "---\n\n"
-        + st.session_state["roadmap"]
-    )
-
-    text_data = (
-        "AI Entrance Test Preparation Roadmap\n"
-        "=====================================\n\n"
-        f"Test: {st.session_state['test']}\n"
-        f"Exam Date: {st.session_state['exam_date']}\n\n"
-        + st.session_state["roadmap"]
-    )
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.download_button(
-            "📄 Download Markdown",
-            markdown_data,
-            "entrance_test_roadmap.md",
-            "text/markdown",
-            use_container_width=True
+        show_roadmap(
+            st.session_state.roadmap
         )
 
-    with col2:
-        st.download_button(
-            "📝 Download Text",
-            text_data,
-            "entrance_test_roadmap.txt",
-            "text/plain",
-            use_container_width=True
+
+# ============================================================
+# MCQ TAB
+# ============================================================
+
+with tab2:
+
+    st.subheader(
+        "📝 AI Practice Test Generator"
+    )
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    subject = col1.selectbox(
+        "Subject",
+        SUBJECTS
+    )
+
+    difficulty = col2.selectbox(
+        "Difficulty",
+        [
+            "Easy",
+            "Medium",
+            "Hard",
+            "Mixed"
+        ]
+    )
+
+    count = col3.selectbox(
+        "Number of Questions",
+        [
+            5,
+            10,
+            15,
+            20
+        ],
+        index=1
+    )
+
+    quiz_level = col4.selectbox(
+        "Student Level",
+        LEVELS,
+        key="quiz_level"
+    )
+
+    if st.button(
+        "🎯 Generate New MCQ Test",
+        type="primary",
+        use_container_width=True
+    ):
+
+        with st.spinner(
+            "Generating original practice questions..."
+        ):
+
+            try:
+
+                response = ask_gemini(
+                    mcq_prompt(
+                        exam_name,
+                        subject,
+                        difficulty,
+                        count,
+                        quiz_level
+                    ),
+                    json_mode=True
+                )
+
+                data = clean_json(
+                    response
+                )
+
+                questions = data.get(
+                    "questions",
+                    []
+                )
+
+                st.session_state.questions = (
+                    questions
+                )
+
+                st.session_state.quiz_answers = [
+                    None
+                    for _ in questions
+                ]
+
+            except Exception as error:
+
+                st.error(
+                    f"Could not generate test: "
+                    f"{error}"
+                )
+
+    if (
+        "questions" in st.session_state
+        and st.session_state.questions
+    ):
+
+        run_quiz(
+            st.session_state.questions
         )
-else:
-    st.info(
-        "👈 Configure the settings in the sidebar and click "
-        "**Generate Roadmap**."
+
+
+# ============================================================
+# HOW IT WORKS
+# ============================================================
+
+with tab3:
+
+    st.markdown(
+        """
+### 🚀 PakPrep AI Features
+
+**1. Personalized Roadmap**
+
+The student provides:
+
+- Entrance test
+- Target date
+- Preparation level
+- Daily study hours
+- Weak area / focus
+
+The AI then creates a customized preparation strategy.
+
+---
+
+**2. Progressive Preparation**
+
+The roadmap can contain:
+
+- Foundation
+- Concept building
+- Topic practice
+- MCQs
+- Timed practice
+- Mock exams
+- Error-log review
+- Revision
+- Final-week preparation
+- Exam-day strategy
+
+---
+
+**3. AI Practice Tests**
+
+Students can generate different tests based on:
+
+- Subject
+- Difficulty
+- Number of questions
+- Student level
+- Selected entrance test
+
+Each question contains:
+
+- Four options
+- Correct answer
+- Explanation
+- Topic
+
+---
+
+### ⚠️ Important
+
+This application is an AI study assistant.
+
+It should NOT be treated as an official source
+for examination dates, syllabus, admission rules,
+eligibility requirements, or official past papers.
+
+Students should verify current information
+from the relevant official testing or
+admission authority.
+"""
     )
