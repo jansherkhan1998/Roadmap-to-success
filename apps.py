@@ -12,7 +12,7 @@ from google import genai
 # ============================================================
 
 st.set_page_config(
-    page_title="PakPrep AI",
+    page_title="Roadmap to success",
     page_icon="📚",
     layout="wide"
 )
