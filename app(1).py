@@ -394,7 +394,7 @@ def run_quiz(questions):
 # HEADER & SIDEBAR
 # ============================================================
 
-st.title("📚 PakPrep AI")
+st.title("📚 Roadmap to success")
 st.caption(
     "AI-powered preparation roadmaps and practice MCQs for Pakistani entrance"
     " tests."
