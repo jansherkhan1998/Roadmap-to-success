@@ -84,7 +84,7 @@ def ask_gemini(prompt, json_mode=False):
   )
 
   response = client.models.generate_content(
-      model="gemini-2.5-flash", contents=prompt, config=config
+      model="gemini-3.6-flash", contents=prompt, config=config
   )
 
   return response.text
