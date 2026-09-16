@@ -187,39 +187,75 @@ def roadmap_prompt(exam, exam_date, level, hours, focus):
   days = max(1, (exam_date - date.today()).days)
 
   return f"""
-You are an expert Pakistan entrance-test preparation planner.
+You are an elite, high-stakes Academic Strategist for Pakistani Competitive Exams ({exam}). 
+The student wants to score maximum/perfect marks in {days} days.
 
-Create a realistic, detailed day-by-day roadmap for:
-Exam: {exam}
-Exam Date: {exam_date.isoformat()}
-Days Remaining: {days}
-Student Level: {level}
-Study Hours Per Day: {hours}
-Special Focus: {focus or "None"}
+Create an INTENSE, non-casual, highly motivating, and granular 90-day execution roadmap.
 
-IMPORTANT:
-- Structure a detailed daily breakdown covering ALL {days} days remaining (or structured across the available time).
-- Each day must contain exact subjects, specific chapters/topics, practice tasks, and assigned hours.
+STUDENT PROFILE:
+- Target Exam: {exam}
+- Time Horizon: {days} Days
+- Starting Level: {level}
+- Daily Commitment: {hours} Hours/day
+- Focus Area: {focus or "Overall High-Yield Mastery"}
 
-Return ONLY valid JSON with this structure:
+CORE DIRECTIVES FOR THE ROADMAP:
+1. Divide the {days} days into 3 distinct gamified phases:
+   - Phase 1: Foundation & Chapter Crucible (Days 1 to 45) -> Deep FSc/A-Level textbook coverage.
+   - Phase 2: High-Speed Practice & Topic Blitz (Days 46 to 75) -> Past papers, numerical tricks, and error logging.
+   - Phase 3: Simulated Exam Execution & Revision (Days 76 to {days}) -> Full-length mock tests and rapid review.
+2. Provide a sample WEEK-BY-WEEK and DAY-BY-DAY schedule table. Every day MUST specify:
+   - Specific FSc/A-Level Chapter names (e.g., "Physics: Work & Energy", "Biology: Biological Molecules").
+   - Concrete daily goals (e.g., "Solve 80 MCQs under timed conditions", "Memorize 15 organic reaction mechanisms").
+   - Daily morning vs. evening time allocation.
+
+Return ONLY valid JSON with this exact schema:
 
 {{
-    "summary": "High level strategy overview",
-    "assumptions": ["assumption 1", "assumption 2"],
+    "strategy_title": "Game Plan Title",
+    "target_score_mentality": "Executive strategy statement to hit top marks",
+    "phases": [
+        {{
+            "phase_name": "Phase 1: Foundation Crucible",
+            "duration": "Days 1-45",
+            "primary_goal": "Goal description",
+            "daily_target_mcqs": 60
+        }},
+        {{
+            "phase_name": "Phase 2: Speed & MCQ Mastery",
+            "duration": "Days 46-75",
+            "primary_goal": "Goal description",
+            "daily_target_mcqs": 100
+        }},
+        {{
+            "phase_name": "Phase 3: Full Mock Execution",
+            "duration": "Days 76-90",
+            "primary_goal": "Goal description",
+            "daily_target_mcqs": 180
+        }}
+    ],
     "day_by_day_schedule": [
         {{
             "day_number": 1,
-            "subject": "Physics",
-            "topic": "Vectors and Equilibrium",
-            "action_items": "Read textbook chapter 2, solve 30 practice MCQs",
+            "phase": "Phase 1",
+            "subject": "Biology & Physics",
+            "topics": "Bio: Cell Structure & Function | Phys: Scalars & Vectors",
+            "morning_session": "Read textbook chapters thoroughly & annotate key terms (2.5 hrs)",
+            "evening_session": "Solve 50 topic-wise MCQs & update Error Log (1.5 hrs)",
+            "daily_mcq_target": 50,
             "hours": {hours}
         }}
     ],
-    "final_week": ["tip 1", "tip 2"],
-    "exam_day": ["tip 1", "tip 2"]
+    "error_log_protocol": [
+        "Rule 1 for tracking wrong answers",
+        "Rule 2 for spaced repetition"
+    ],
+    "final_week_rules": [
+        "Rule 1 for mock exams",
+        "Rule 2 for stress management"
+    ]
 }}
 """
-
 
 # ============================================================
 # MCQ PROMPT
