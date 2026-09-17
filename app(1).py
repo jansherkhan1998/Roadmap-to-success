@@ -313,4 +313,296 @@ Subject: {subject}
 Difficulty: {difficulty}
 Student Level: {level}
 
-Return ONLY valid JSON
+Return ONLY valid JSON:
+{{
+    "questions": [
+        {{
+            "question": "Question text",
+            "options": {{
+                "A": "Option A",
+                "B": "Option B",
+                "C": "Option C",
+                "D": "Option D"
+            }},
+            "answer": "A",
+            "explanation": "Short explanation",
+            "topic": "Topic"
+        }}
+    ]
+}}
+"""
+
+
+# ============================================================
+# DISPLAY ROADMAP
+# ============================================================
+
+
+def show_roadmap(data, exam_name):
+  if not data:
+    st.warning("⚠️ No roadmap data available. Please regenerate.")
+    return
+
+  st.subheader(f"🔥 {data.get('strategy_title', 'Granular Mastery Plan')}")
+
+  schedule = data.get("schedule", [])
+  if not schedule:
+    st.warning("⚠️ Schedule items could not be loaded. Please regenerate.")
+    return
+
+  # ---------------------------------------------------------
+  # LAYER 1: Interactive High-Level Checklist Table
+  # ---------------------------------------------------------
+  st.markdown("### 📅 Step 1: High-Level Study Schedule")
+  df = pd.DataFrame(schedule)
+
+  # Filter out nested subtopic array from main dataframe display
+  table_cols = [
+      c
+      for c in df.columns
+      if c
+      in [
+          "time_block",
+          "subject_focus",
+          "chapters_to_cover",
+          "action_tasks",
+          "practice_target",
+          "recommended_books",
+      ]
+  ]
+  table_df = df[table_cols].copy()
+
+  if "completed" not in table_df.columns:
+    table_df.insert(0, "completed", False)
+
+  st.data_editor(
+      table_df,
+      column_config={
+          "completed": st.column_config.CheckboxColumn(
+              "Status", default=False
+          ),
+          "time_block": "Timeline",
+          "subject_focus": "Subject Focus",
+          "chapters_to_cover": "Exact Chapters",
+          "action_tasks": "Daily Study Routine",
+          "practice_target": "MCQ Target",
+          "recommended_books": "Reference Material",
+      },
+      use_container_width=True,
+      hide_index=True,
+      key=f"roadmap_table_{exam_name}",
+  )
+
+  st.divider()
+
+  # ---------------------------------------------------------
+  # LAYER 2: Granular Subtopic & Micro-Concept Deep Dive
+  # ---------------------------------------------------------
+  st.markdown("### 🔍 Step 2: Detailed Subtopic & Concept Breakdown")
+  st.caption(
+      "Expand any time block below to see exact subtopics, mechanisms, and core concept requirements."
+  )
+
+  for block in schedule:
+    time_label = (
+        block.get("time_block") or block.get("phase") or "Study Phase"
+    )
+    chapters_label = (
+        block.get("chapters_to_cover") or block.get("subject_focus") or ""
+    )
+    subtopic_data = block.get("detailed_subtopics", [])
+
+    with st.expander(f"📌 **{time_label}**: {chapters_label}"):
+      if isinstance(subtopic_data, list) and len(subtopic_data) > 0:
+        for item in subtopic_data:
+          if isinstance(item, dict):
+            ch_name = item.get("chapter", "Chapter Focus")
+            st.markdown(f"#### 📘 {ch_name}")
+            for sub in item.get("subtopics", []):
+              st.write(f"  • {sub}")
+            st.markdown("---")
+          elif isinstance(item, str):
+            st.write(f"• {item}")
+      else:
+        st.markdown("#### 📘 Core Chapters")
+        for ch in block.get("chapters_to_cover", "").split("|"):
+          if ch.strip():
+            st.write(f"  • **{ch.strip()}**")
+
+        st.markdown("#### 📝 Key Tasks")
+        tasks = block.get("action_tasks", "")
+        if tasks:
+          st.write(f"  • {tasks}")
+
+  st.divider()
+
+  # Download PDF Button
+  try:
+    pdf_bytes = generate_roadmap_pdf(data, exam_name)
+    st.download_button(
+        label="📄 Download Complete Detailed PDF Plan",
+        data=pdf_bytes,
+        file_name=f"{exam_name}_Granular_Plan.pdf",
+        mime="application/pdf",
+        type="primary",
+        use_container_width=True,
+    )
+  except Exception as e:
+    st.error(f"Could not prepare PDF download: {e}")
+
+
+# ============================================================
+# QUIZ ENGINE
+# ============================================================
+
+
+def run_quiz(questions):
+  if (
+      "quiz_answers" not in st.session_state
+      or len(st.session_state.quiz_answers) != len(questions)
+  ):
+    st.session_state.quiz_answers = [None for _ in questions]
+
+  for i, question in enumerate(questions):
+    st.markdown(f"### Q{i + 1}. {question['question']}")
+
+    answer = st.radio(
+        "Select an answer",
+        options=["A", "B", "C", "D"],
+        format_func=lambda x, options=question["options"]: f"{x}. {options[x]}",
+        key=f"question_{i}",
+        index=None,
+    )
+
+    st.session_state.quiz_answers[i] = answer
+
+  if st.button("Submit Test", type="primary"):
+    score = sum(
+        answer == question["answer"]
+        for answer, question in zip(
+            st.session_state.quiz_answers, questions
+        )
+    )
+
+    percentage = (score / len(questions)) * 100
+
+    st.success(f"Score: {score}/{len(questions)} ({percentage:.1f}%)")
+
+    st.subheader("📊 Answer Review")
+
+    for i, question in enumerate(questions):
+      user_answer = st.session_state.quiz_answers[i]
+      correct_answer = question["answer"]
+
+      if user_answer == correct_answer:
+        st.write(f"✅ Q{i + 1}: Correct")
+      else:
+        st.write(f"❌ Q{i + 1}: Correct answer = **{correct_answer}**")
+        st.caption(question["explanation"])
+
+
+# ============================================================
+# HEADER & SIDEBAR
+# ============================================================
+
+st.title("📚 Roadmap to Success")
+st.caption(
+    "AI-powered preparation roadmaps and practice MCQs for Pakistani entrance"
+    " tests."
+)
+
+with st.sidebar:
+  st.header("👨‍🎓 Student Profile")
+  exam = st.selectbox("Select Test", EXAMS)
+  custom_exam = st.text_input(
+      "Custom Test Name", disabled=(exam != "Other / Custom Test")
+  )
+
+  exam_name = (
+      custom_exam.strip()
+      if (exam == "Other / Custom Test" and custom_exam.strip())
+      else exam
+  )
+  exam_date = st.date_input("Target Test Date", min_value=date.today())
+  level = st.selectbox("Preparation Level", LEVELS)
+  hours = st.slider("Study Hours Per Day", 1, 12, 4)
+  focus = st.text_input("Special Focus", placeholder="e.g. Physics numericals")
+
+
+# ============================================================
+# TABS
+# ============================================================
+
+tab1, tab2, tab3 = st.tabs(
+    ["🗺️ Preparation Roadmap", "📝 Practice MCQs", "ℹ️ How It Works"]
+)
+
+with tab1:
+  days = max(0, (exam_date - date.today()).days)
+  col1, col2, col3 = st.columns(3)
+  col1.metric("Test", exam_name)
+  col2.metric("Days Remaining", days)
+  col3.metric("Level", level)
+
+  if st.button(
+      "🚀 Generate My Complete Roadmap",
+      type="primary",
+      use_container_width=True,
+  ):
+    with st.spinner("Building your personalized high-yield roadmap..."):
+      try:
+        raw_response = ask_gemini(
+            roadmap_prompt(exam_name, exam_date, level, hours, focus),
+            json_mode=True,
+        )
+        data = parse_ai_json(raw_response)
+        if data:
+          st.session_state.roadmap = data
+          st.success("Roadmap generated successfully!")
+        else:
+          st.error(
+              "Failed to structure roadmap data. Please click 'Generate'"
+              " again."
+          )
+      except Exception as error:
+        st.error(f"Could not generate roadmap: {error}")
+
+  if "roadmap" in st.session_state:
+    show_roadmap(st.session_state.roadmap, exam_name)
+
+with tab2:
+  st.subheader("📝 AI Practice Test Generator")
+  col1, col2, col3, col4 = st.columns(4)
+  subject = col1.selectbox("Subject", SUBJECTS)
+  difficulty = col2.selectbox("Difficulty", ["Easy", "Medium", "Hard", "Mixed"])
+  count = col3.selectbox("Number of Questions", [5, 10, 15, 20], index=1)
+  quiz_level = col4.selectbox("Student Level", LEVELS, key="quiz_level")
+
+  if st.button(
+      "🎯 Generate New MCQ Test", type="primary", use_container_width=True
+  ):
+    with st.spinner("Generating practice questions..."):
+      try:
+        raw_response = ask_gemini(
+            mcq_prompt(exam_name, subject, difficulty, count, quiz_level),
+            json_mode=True,
+        )
+        data = parse_ai_json(raw_response)
+        questions = data.get("questions", [])
+        st.session_state.questions = questions
+        st.session_state.quiz_answers = [None for _ in questions]
+      except Exception as error:
+        st.error(f"Could not generate test: {error}")
+
+  if "questions" in st.session_state and st.session_state.questions:
+    run_quiz(st.session_state.questions)
+
+with tab3:
+  st.markdown("""
+### 🚀 Roadmap to Success Features
+1. **Interactive High-Level Schedule**: Overview of timelines, subjects, target chapters, and study tasks.
+2. **Granular Subtopic Breakdown**: Expandable dropdowns detailing specific organelle functions, chemical laws, and physics formulas.
+3. **Safe JSON Parsing**: Automated system recovery prevents crashes from API limit cut-offs.
+4. **Downloadable PDF Export**: Download and save your customized schedule with complete subtopic breakdowns offline.
+5. **Interactive MCQ Practice Engine**: Generate custom entrance test practice MCQs complete with options and explanation keys.
+""")
