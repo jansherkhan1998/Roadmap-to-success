@@ -714,7 +714,7 @@ if "roadmap" in st.session_state:
   # ============================================================
   # TAB 3: PROGRESS & ANALYTICS DASHBOARD
   # ============================================================
-  import plotly.express as px
+import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
