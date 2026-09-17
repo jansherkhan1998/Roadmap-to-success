@@ -242,7 +242,7 @@ STUDENT & EXAM SPECIFICATIONS:
 TEST-SPECIFIC SYLLABUS DIRECTIVES:
 - If MDCAT: Prioritize Biology (81 MCQs), Chemistry (45 MCQs), Physics (36 MCQs), English & Logical Reasoning.
 - If ECAT/UET: Prioritize Math (30 MCQs), Physics (30 MCQs), Chemistry/CS (30 MCQs), English (10 MCQs).
-- If NUST NET: Focus on Math (50%), Physics (30%), English (20%) time-management (~50s per MCQ).
+#- If NUST NET: Focus on Math (50%), Physics (30%), English (20%) time-management (~50s per MCQ).
 - If NTS NAT/GAT/FAST: Heavy focus on Analytical Reasoning, Quantitative, Verbal, and IQ.
 
 INSTRUCTION FOR HIGH DETAIL:
