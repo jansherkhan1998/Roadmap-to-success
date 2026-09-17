@@ -1,9 +1,13 @@
 from datetime import date
 import json
 import os
+import time
 from fpdf import FPDF
 from google import genai
 from google.genai import types
+from google.genai.errors import APIError
+from json_repair import repair_json
+import pandas as pd
 import streamlit as st
 
 # ============================================================
@@ -11,7 +15,7 @@ import streamlit as st
 # ============================================================
 
 st.set_page_config(
-    page_title="Roadmap to success", page_icon="📚", layout="wide"
+    page_title="Roadmap to Success", page_icon="📚", layout="wide"
 )
 
 
@@ -67,9 +71,6 @@ def get_api_key():
 def get_client(api_key):
   return genai.Client(api_key=api_key)
 
-import time
-from google.genai.errors import APIError
-
 
 def ask_gemini(prompt, json_mode=False, max_retries=5):
   api_key = get_api_key()
@@ -82,51 +83,62 @@ def ask_gemini(prompt, json_mode=False, max_retries=5):
   client = get_client(api_key)
 
   config = types.GenerateContentConfig(
-      temperature=0.3,
-      max_output_tokens=8192,  # Ensures long structured outputs fit
-      response_mime_type="application/json", #if json_mode else "text/plain",
+      temperature=0.2,
+      max_output_tokens=8192,  # Ensures detailed responses fit without truncation
+      response_mime_type="application/json",
   )
 
-  # Automatic retry logic for temporary server-side spikes (503/429 errors)
+  # Automatic retry logic for server spikes (503/429 errors)
   for attempt in range(max_retries):
     try:
       response = client.models.generate_content(
-          model="gemini-3.5-flash", contents=prompt, config=config
+          model="gemini-2.5-flash", contents=prompt, config=config
       )
       return response.text
 
     except APIError as e:
-      # If it's a 503 (Overloaded) or 429 (Rate Limit) error, retry automatically
       if ("503" in str(e) or "429" in str(e)) and attempt < max_retries - 1:
-        wait_time = (2**attempt) + 1  # Waits 2s, 3s, 5s, 9s...
+        wait_time = (2**attempt) + 1  # Exponential backoff (2s, 3s, 5s...)
         time.sleep(wait_time)
       else:
-        raise e  # If retries run out or it's a different error, raise it
+        raise e
 
 
 # ============================================================
-# JSON CLEANER
+# SAFE JSON PARSER (FIXES UNTERMINATED STRINGS)
 # ============================================================
 
 
-def clean_json(text):
-  text = text.strip()
+def parse_ai_json(response_text):
+  """Safely parses LLM response text into JSON.
 
+  Uses repair_json to handle truncated or cut-off strings smoothly.
+  """
+  if not response_text:
+    return {}
+
+  text = response_text.strip()
+
+  # Clean markdown code blocks if present
   if text.startswith("```"):
     lines = text.splitlines()
-    if lines[-1].strip().startswith("```"):
-      lines = lines[1:-1]
-    else:
+    if lines[0].startswith("```"):
       lines = lines[1:]
+    if lines and lines[-1].startswith("```"):
+      lines = lines[:-1]
     text = "\n".join(lines).strip()
 
   try:
+    # Attempt native load first
     return json.loads(text)
-  except json.JSONDecodeError as e:
-    st.error(
-        f"Failed to parse AI output into JSON: {e}. Please click 'Generate' again."
-    )
-    return {}
+  except Exception:
+    # If the JSON is truncated or has syntax flaws, auto-repair it
+    try:
+      repaired_str = repair_json(text)
+      return json.loads(repaired_str)
+    except Exception as e:
+      st.error(f"Could not parse AI output: {e}")
+      return {}
 
 
 # ============================================================
@@ -146,53 +158,87 @@ def generate_roadmap_pdf(data, exam_name):
   )
   pdf.ln(5)
 
-  # Summary
+  # Strategy Overview
   pdf.set_font("Helvetica", "B", 12)
-  pdf.cell(0, 8, "Executive Summary", new_x="LMARGIN", new_y="NEXT")
-  pdf.set_font("Helvetica", "", 10)
-  summary_text = data.get("summary", "").encode("latin-1", "replace").decode("latin-1")
-  pdf.multi_cell(0, 5, summary_text)
-  pdf.ln(5)
+  title_text = (
+      data.get("strategy_title", "Granular Mastery Plan")
+      .encode("latin-1", "replace")
+      .decode("latin-1")
+  )
+  pdf.cell(0, 8, title_text, new_x="LMARGIN", new_y="NEXT")
+  pdf.ln(3)
 
   # Schedule Table
-  schedule = data.get("day_by_day_schedule", [])
+  schedule = data.get("schedule", [])
   if schedule:
-    pdf.set_font("Helvetica", "B", 12)
-    pdf.cell(0, 8, "Day-by-Day Schedule", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(0, 8, "Structured Schedule", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(2)
 
-    # Render Table
     with pdf.table(
-        col_widths=(15, 25, 45, 80, 20), text_align="LEFT"
+        col_widths=(25, 30, 45, 60, 20), text_align="LEFT"
     ) as table:
       header = table.row()
-      header.cell("Day #")
+      header.cell("Timeline")
       header.cell("Subject")
-      header.cell("Topic")
-      header.cell("Action Items")
-      header.cell("Hours")
+      header.cell("Chapters Covered")
+      header.cell("Action Plan")
+      header.cell("MCQ Target")
 
       for row_data in schedule:
         row = table.row()
-        row.cell(str(row_data.get("day_number", "")))
+        row.cell(str(row_data.get("time_block", "")))
         row.cell(
-            str(row_data.get("subject", ""))
+            str(row_data.get("subject_focus", ""))
             .encode("latin-1", "replace")
             .decode("latin-1")
         )
         row.cell(
-            str(row_data.get("topic", ""))
+            str(row_data.get("chapters_to_cover", ""))
             .encode("latin-1", "replace")
             .decode("latin-1")
         )
         row.cell(
-            str(row_data.get("action_items", ""))
+            str(row_data.get("action_tasks", ""))
             .encode("latin-1", "replace")
             .decode("latin-1")
         )
-        row.cell(str(row_data.get("hours", "")))
+        row.cell(str(row_data.get("practice_target", "")))
 
-  # PDF Output
+  pdf.ln(5)
+
+  # Subtopic Details Breakdown
+  pdf.set_font("Helvetica", "B", 12)
+  pdf.cell(0, 8, "Detailed Subtopic Breakdown", new_x="LMARGIN", new_y="NEXT")
+  pdf.ln(2)
+
+  pdf.set_font("Helvetica", "", 10)
+  for block in schedule:
+    time_block = block.get("time_block", "Phase")
+    subtopics_group = block.get("detailed_subtopics", [])
+
+    if subtopics_group:
+      pdf.set_font("Helvetica", "B", 10)
+      pdf.cell(0, 6, f"[{time_block}] Subtopics:", new_x="LMARGIN", new_y="NEXT")
+      pdf.set_font("Helvetica", "", 9)
+
+      for item in subtopics_group:
+        if isinstance(item, dict):
+          ch = (
+              item.get("chapter", "Chapter")
+              .encode("latin-1", "replace")
+              .decode("latin-1")
+          )
+          pdf.cell(0, 5, f"  * Chapter: {ch}", new_x="LMARGIN", new_y="NEXT")
+          for sub in item.get("subtopics", []):
+            sub_clean = sub.encode("latin-1", "replace").decode("latin-1")
+            pdf.multi_cell(0, 5, f"    - {sub_clean}")
+        elif isinstance(item, str):
+          sub_clean = item.encode("latin-1", "replace").decode("latin-1")
+          pdf.multi_cell(0, 5, f"  - {sub_clean}")
+
+      pdf.ln(2)
+
   return bytes(pdf.output())
 
 
@@ -201,22 +247,19 @@ def generate_roadmap_pdf(data, exam_name):
 # ============================================================
 
 
-from datetime import date
-
-
 def roadmap_prompt(exam, exam_date, level, hours, focus):
   days = max(1, (exam_date - date.today()).days)
   weeks = max(1, days // 7)
 
   return f"""
-You are an experienced Chief Academic Strategist for Pakistani universites Entrance Exams ({exam}).
+You are the Chief Academic Strategist for Pakistani Entrance Exams ({exam}).
 
 Target Exam: {exam}
 Timeframe: {days} Days ({weeks} Weeks)
 Level: {level} | Hours/Day: {hours} | Focus: {focus or "Full Syllabus High-Yield"}
 
 IMPORTANT INSTRUCTION FOR CONCISE HIGH-DETAIL:
-Provide a structured syllabus roadmap. For every phase, break down the core chapters into 3-4 bullet-point subtopics. Keep explanations brief and focused on official syllabus terms to avoid JSON length limits.
+Provide a structured syllabus roadmap. For every phase or time block, break down the core chapters into 3-4 bullet-point subtopics. Focus strictly on official syllabus terms and micro-concepts to remain concise and stay within length boundaries.
 
 Return ONLY valid JSON matching this exact structure:
 {{
@@ -227,16 +270,24 @@ Return ONLY valid JSON matching this exact structure:
             "subject_focus": "Biology & Chemistry Foundations",
             "chapters_to_cover": "Bio: Cell Biology, Enzymes | Chem: Basic Concepts",
             "recommended_books": "Punjab/KPK Textbook Board & KIPS Series",
-            "action_tasks": "Read textbook lines, solve 80 MCQs daily",
+            "action_tasks": "Read textbook lines, annotate organelle functions, solve 80 MCQs daily",
             "practice_target": "500 MCQs",
             "detailed_subtopics": [
                 {{
                     "chapter": "Cell Biology",
                     "subtopics": [
-                        "Fluid Mosaic Model: Phospholipid bilayer and transport",
-                        "Organelles: ER, Golgi bodies, Lysosomes, Mitochondria",
-                        "Nucleus & Chromosomes: Histones and nucleosome folding",
-                        "Cell Comparisons: Prokaryote (70S) vs Eukaryote (80S) ribosomes"
+                        "Fluid Mosaic Model: Phospholipid bilayer fluidity and transport mechanisms",
+                        "Organelles: ER, Golgi apparatus sorting, Lysosomes acidic pH and storage diseases",
+                        "Energy Transducers: Mitochondria cristae and chloroplast thylakoids",
+                        "Nucleus and Chromosomes: Histone octamers, nucleosome folding, 70S vs 80S ribosomes"
+                    ]
+                }},
+                {{
+                    "chapter": "Basic Concepts and Stoichiometry",
+                    "subtopics": [
+                        "Mole concept, Avogadros number, and gas molar volume at STP",
+                        "Empirical vs Molecular formula derivations",
+                        "Limiting Reactants identification and percentage yield calculations"
                     ]
                 }}
             ]
@@ -246,6 +297,8 @@ Return ONLY valid JSON matching this exact structure:
     "test_day_strategy": ["Tip 1", "Tip 2"]
 }}
 """
+
+
 # ============================================================
 # MCQ PROMPT
 # ============================================================
@@ -260,276 +313,4 @@ Subject: {subject}
 Difficulty: {difficulty}
 Student Level: {level}
 
-Return ONLY valid JSON:
-{{
-    "questions": [
-        {{
-            "question": "Question text",
-            "options": {{
-                "A": "Option A",
-                "B": "Option B",
-                "C": "Option C",
-                "D": "Option D"
-            }},
-            "answer": "A",
-            "explanation": "Short explanation",
-            "topic": "Topic"
-        }}
-    ]
-}}
-"""
-
-
-# ============================================================
-# DISPLAY ROADMAP
-# ============================================================
-
-
-import pandas as pd
-import streamlit as st
-
-
-def show_roadmap(data, exam_name):
-  if not data:
-    st.warning("⚠️ No roadmap data available. Please regenerate.")
-    return
-
-  st.subheader(f"🔥 {data.get('strategy_title', 'Granular Mastery Plan')}")
-
-  schedule = data.get("schedule", [])
-  if not schedule:
-    st.warning("⚠️ Schedule items could not be loaded. Please regenerate.")
-    return
-
-  # ---------------------------------------------------------
-  # LAYER 1: Interactive High-Level Checklist Table
-  # ---------------------------------------------------------
-  st.markdown("### 📅 Step 1: High-Level Study Schedule")
-  df = pd.DataFrame(schedule)
-
-  # Filter out nested detailed_subtopics from the main table view to keep it clean
-  table_cols = [
-      c
-      for c in df.columns
-      if c in [
-          "time_block",
-          "subject_focus",
-          "chapters_to_cover",
-          "action_tasks",
-          "practice_target",
-          "recommended_books",
-      ]
-  ]
-  table_df = df[table_cols].copy()
-
-  if "completed" not in table_df.columns:
-    table_df.insert(0, "completed", False)
-
-  edited_df = st.data_editor(
-      table_df,
-      column_config={
-          "completed": st.column_config.CheckboxColumn(
-              "Status", default=False
-          ),
-          "time_block": "Timeline",
-          "subject_focus": "Subject Focus",
-          "chapters_to_cover": "Exact Chapters",
-          "action_tasks": "Daily Study Routine",
-          "practice_target": "MCQ Target",
-          "recommended_books": "Reference Material",
-      },
-      use_container_width=True,
-      hide_index=True,
-      key=f"roadmap_table_{exam_name}",
-  )
-
-  st.divider()
-
-  # ---------------------------------------------------------
-  # LAYER 2: Granular Subtopic & Micro-Concept Deep Dive
-  # ---------------------------------------------------------
-  st.markdown("### 🔍 Step 2: Detailed Subtopic & Concept Breakdown")
-  st.caption(
-      "Expand any time block below to see the exact subtopics, organelle/reaction mechanisms, and numerical formulas required by the official syllabus."
-  )
-
-  for block in schedule:
-    time_label = block.get("time_block", "Study Block")
-    chapters_label = block.get("chapters_to_cover", "")
-    subtopic_data = block.get("detailed_subtopics", [])
-
-    with st.expander(f"📌 **{time_label}**: {chapters_label}"):
-      if subtopic_data:
-        for item in subtopic_data:
-          ch_name = item.get("chapter", "Chapter Focus")
-          st.markdown(f"#### 📘 {ch_name}")
-
-          subtopics_list = item.get("subtopics", [])
-          for sub in subtopics_list:
-            st.write(f"  • {sub}")
-          st.markdown("---")
-      else:
-        st.info("No detailed subtopic breakdowns available for this block.")
-
-  st.divider()
-
-  # Download Button
-  try:
-    pdf_bytes = generate_roadmap_pdf(data, exam_name)
-    st.download_button(
-        label="📄 Download Complete Detailed PDF Plan",
-        data=pdf_bytes,
-        file_name=f"{exam_name}_Granular_Plan.pdf",
-        mime="application/pdf",
-        type="primary",
-        use_container_width=True,
-    )
-  except Exception as e:
-    st.error(f"PDF error: {e}")# ============================================================
-# QUIZ ENGINE
-# ============================================================
-
-
-def run_quiz(questions):
-  if (
-      "quiz_answers" not in st.session_state
-      or len(st.session_state.quiz_answers) != len(questions)
-  ):
-    st.session_state.quiz_answers = [None for _ in questions]
-
-  for i, question in enumerate(questions):
-    st.markdown(f"### Q{i + 1}. {question['question']}")
-
-    answer = st.radio(
-        "Select an answer",
-        options=["A", "B", "C", "D"],
-        format_func=lambda x, options=question["options"]: f"{x}. {options[x]}",
-        key=f"question_{i}",
-        index=None,
-    )
-
-    st.session_state.quiz_answers[i] = answer
-
-  if st.button("Submit Test", type="primary"):
-    score = sum(
-        answer == question["answer"]
-        for answer, question in zip(
-            st.session_state.quiz_answers, questions
-        )
-    )
-
-    percentage = (score / len(questions)) * 100
-
-    st.success(f"Score: {score}/{len(questions)} ({percentage:.1f}%)")
-
-    st.subheader("📊 Answer Review")
-
-    for i, question in enumerate(questions):
-      user_answer = st.session_state.quiz_answers[i]
-      correct_answer = question["answer"]
-
-      if user_answer == correct_answer:
-        st.write(f"✅ Q{i + 1}: Correct")
-      else:
-        st.write(
-            f"❌ Q{i + 1}: Correct answer = **{correct_answer}**"
-        )
-        st.caption(question["explanation"])
-
-
-# ============================================================
-# HEADER & SIDEBAR
-# ============================================================
-
-st.title("📚 Roadmap to success")
-st.caption(
-    "AI-powered preparation roadmaps and practice MCQs for Pakistani entrance"
-    " tests."
-)
-
-with st.sidebar:
-  st.header("👨‍🎓 Student Profile")
-  exam = st.selectbox("Select Test", EXAMS)
-  custom_exam = st.text_input(
-      "Custom Test Name", disabled=(exam != "Other / Custom Test")
-  )
-
-  exam_name = (
-      custom_exam.strip()
-      if (exam == "Other / Custom Test" and custom_exam.strip())
-      else exam
-  )
-  exam_date = st.date_input("Target Test Date", min_value=date.today())
-  level = st.selectbox("Preparation Level", LEVELS)
-  hours = st.slider("Study Hours Per Day", 1, 12, 4)
-  focus = st.text_input("Special Focus", placeholder="e.g. Physics numericals")
-
-
-# ============================================================
-# TABS
-# ============================================================
-
-tab1, tab2, tab3 = st.tabs(
-    ["🗺️ Preparation Roadmap", "📝 Practice MCQs", "ℹ️ How It Works"]
-)
-
-with tab1:
-  days = max(0, (exam_date - date.today()).days)
-  col1, col2, col3 = st.columns(3)
-  col1.metric("Test", exam_name)
-  col2.metric("Days Remaining", days)
-  col3.metric("Level", level)
-
-  if st.button(
-      "🚀 Generate My Complete Roadmap",
-      type="primary",
-      use_container_width=True,
-  ):
-    with st.spinner("Building your personalized day-by-day roadmap..."):
-      try:
-        response = ask_gemini(
-            roadmap_prompt(exam_name, exam_date, level, hours, focus),
-            json_mode=True,
-        )
-        data = clean_json(response)
-        st.session_state.roadmap = data
-      except Exception as error:
-        st.error(f"Could not generate roadmap: {error}")
-
-  if "roadmap" in st.session_state:
-    show_roadmap(st.session_state.roadmap, exam_name)
-
-with tab2:
-  st.subheader("📝 AI Practice Test Generator")
-  col1, col2, col3, col4 = st.columns(4)
-  subject = col1.selectbox("Subject", SUBJECTS)
-  difficulty = col2.selectbox("Difficulty", ["Easy", "Medium", "Hard", "Mixed"])
-  count = col3.selectbox("Number of Questions", [5, 10, 15, 20], index=1)
-  quiz_level = col4.selectbox("Student Level", LEVELS, key="quiz_level")
-
-  if st.button(
-      "🎯 Generate New MCQ Test", type="primary", use_container_width=True
-  ):
-    with st.spinner("Generating practice questions..."):
-      try:
-        response = ask_gemini(
-            mcq_prompt(exam_name, subject, difficulty, count, quiz_level),
-            json_mode=True,
-        )
-        data = clean_json(response)
-        questions = data.get("questions", [])
-        st.session_state.questions = questions
-        st.session_state.quiz_answers = [None for _ in questions]
-      except Exception as error:
-        st.error(f"Could not generate test: {error}")
-
-  if "questions" in st.session_state and st.session_state.questions:
-    run_quiz(st.session_state.questions)
-
-with tab3:
-  st.markdown("""
-### 🚀 PakPrep AI Features
-1. **Day-by-Day Table Schedule**: Generates explicit topics, chapters, and hours per day.
-2. **Downloadable PDF**: Export your personalized roadmap to a clean PDF file to read later.
-3. **Interactive MCQ Engine**: Generate original practice MCQs with explanations and answer keys.
-""")
+Return ONLY valid JSON
