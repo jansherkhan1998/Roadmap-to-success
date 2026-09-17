@@ -161,7 +161,6 @@ Return ONLY valid JSON with this exact structure:
 # PDF GENERATOR (REPORTLAB)
 # ============================================================
 
-
 from datetime import date
 import io
 import re
@@ -170,7 +169,6 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.platypus import (
     HRFlowable,
-    KeepTogether,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
@@ -180,48 +178,53 @@ from reportlab.platypus import (
 
 
 def sanitize_text(text):
-  """Cleans LaTeX, unknown glyphs, bullet artifacts, and escapes special XML chars."""
+  """Aggressively strips code fence artifacts, fixes broken markdown,
+
+  and translates LaTeX math into ReportLab XML format.
+  """
   if not text:
     return ""
 
-  # 1. Remove font-breaking visual characters, code blocks, and decorative symbols
+  # 1. Strip raw code fence indicators and unicode glyph box characters
   text = re.sub(r"[■▼▲─│┌┐└┘├┤┼═#`]+", "", text)
 
-  # 2. Fix Double-Bullet artifacts like "• * " or "* * "
-  text = re.sub(r"^[\s\•\*\-\–\—\>]+", "", text)
+  # 2. Fix dangling or unbalanced Markdown asterisks/underscores
+  text = text.replace("*", "")
 
-  # 3. Clean common LaTeX expressions and map symbols to standard Unicode/HTML
+  # 3. Translate LaTeX math expressions and Greek variables to HTML
   text = re.sub(
       r"\$([A-Za-z0-9_\-\+\=\s\(\)\/\.,]+)\$", r"<i>\1</i>", text
-  )  # Strip $math$
-  text = text.replace("_c", "<sub>c</sub>").replace("_p", "<sub>p</sub>")
+  )  # Strip $...$
   text = (
-      text.replace(r"\epsilon_0", "ε₀")
+      text.replace("_c", "<sub>c</sub>")
+      .replace("_p", "<sub>p</sub>")
+      .replace("_0", "<sub>0</sub>")
+  )
+  text = (
+      text.replace(r"\epsilon", "ε")
       .replace("ε■", "ε₀")
       .replace(r"\approx", "≈")
       .replace(r"\rightarrow", "→")
   )
 
-  # 4. XML Escape for ReportLab parser
+  # 4. XML Escape reserved characters for ReportLab
   text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
-  # 5. Restore valid ReportLab inline formatting tags
+  # 5. Restore clean formatting tags
   text = re.sub(r"&lt;i&gt;(.*?)&lt;/i&gt;", r"<i>\1</i>", text)
   text = re.sub(r"&lt;b&gt;(.*?)&lt;/b&gt;", r"<b>\1</b>", text)
   text = re.sub(r"&lt;sub&gt;(.*?)&lt;/sub&gt;", r"<sub>\1</sub>", text)
-  text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", text)
-  text = re.sub(r"\*(.*?)\*", r"<i>\1</i>", text)
 
   return text.strip()
 
 
 def parse_markdown_table(table_lines, body_style):
-  """Parses table rows while sanitizing contents."""
+  """Parses raw pipe-table lines into a styled ReportLab Table."""
   table_data = []
   for line in table_lines:
     clean_line = line.strip()
     if not clean_line or "---" in clean_line or "===" in clean_line:
-      continue
+      continue  # Ignore structural header separators
 
     cols = [col.strip() for col in clean_line.strip("|").split("|")]
     if any(cols):
@@ -233,12 +236,13 @@ def parse_markdown_table(table_lines, body_style):
   if not table_data:
     return None
 
+  # Uniform column width calculation
   max_cols = max(len(row) for row in table_data)
   for row in table_data:
     while len(row) < max_cols:
       row.append(Paragraph("", body_style))
 
-  col_width = 540.0 / max_cols
+  col_width = 540.0 / max_cols  # Fits standard Letter printable canvas (612 - 72)
 
   t = Table(table_data, colWidths=[col_width] * max_cols)
   t.setStyle(
@@ -352,12 +356,12 @@ def generate_pdf_from_text(test_name, exam_date, roadmap_text):
   for line in lines:
     raw_line = line.strip()
 
-    # Detect markdown tables
+    # Collect Markdown table rows
     if "|" in raw_line and not raw_line.startswith("#"):
       table_buffer.append(raw_line)
       continue
 
-    # Flush accumulated table lines
+    # Process and append accumulated table buffer
     if table_buffer:
       compiled_table = parse_markdown_table(table_buffer, table_body_style)
       if compiled_table:
@@ -366,16 +370,14 @@ def generate_pdf_from_text(test_name, exam_date, roadmap_text):
         story.append(Spacer(1, 5))
       table_buffer = []
 
-    # Check if line is a bullet item before stripping leading bullet chars
-    is_bullet = bool(
-        re.match(r"^[\s\•\*\-\–\—\>]+", raw_line)
-    ) and not raw_line.startswith("#")
+    # Detect bullet items
+    is_bullet = raw_line.startswith(("•", "-", "*", "1.", "2.", "3.", "4."))
 
     clean_line = sanitize_text(raw_line)
     if not clean_line:
       continue
 
-    # Format Headings & Text
+    # Format document elements
     if raw_line.startswith("# "):
       story.append(Paragraph(clean_line, title_style))
     elif raw_line.startswith("## "):
@@ -383,11 +385,13 @@ def generate_pdf_from_text(test_name, exam_date, roadmap_text):
     elif raw_line.startswith("### ") or raw_line.startswith("#### "):
       story.append(Paragraph(clean_line, h2_style))
     elif is_bullet:
-      story.append(Paragraph(f"• {clean_line}", bullet_style))
+      # Strip bullet prefix before adding uniform dot marker
+      clean_bullet_text = re.sub(r"^[\•\*\-\d\.\s]+", "", clean_line)
+      story.append(Paragraph(f"• {clean_bullet_text}", bullet_style))
     else:
       story.append(Paragraph(clean_line, body_style))
 
-  # Flush remaining table if at the end of text
+  # Process trailing table buffer
   if table_buffer:
     compiled_table = parse_markdown_table(table_buffer, table_body_style)
     if compiled_table:
@@ -396,7 +400,8 @@ def generate_pdf_from_text(test_name, exam_date, roadmap_text):
   doc.build(story)
   buffer.seek(0)
   return buffer.getvalue()
-    
+
+
 # ============================================================
 # SIDEBAR CONFIGURATION
 # ============================================================
