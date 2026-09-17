@@ -225,7 +225,12 @@ def roadmap_prompt(exam, exam_date, level, hours, focus):
     )
 
   return f"""
-You are the Chief Academic Strategist for Pakistani Competitive & University Entrance Exams.
+#def roadmap_prompt(exam, exam_date, level, hours, focus):
+  days = max(1, (exam_date - date.today()).days)
+  weeks = max(1, days // 7)
+
+  return f"""
+You are an Experienced Chief Academic Strategist for Pakistani  Competitive & University Entrance test Exams ({exam}).
 
 STUDENT & EXAM SPECIFICATIONS:
 - Target Test: {exam}
@@ -240,38 +245,49 @@ TEST-SPECIFIC SYLLABUS DIRECTIVES:
 - If NUST NET: Focus on Math (50%), Physics (30%), English (20%) time-management (~50s per MCQ).
 - If NTS NAT/GAT/FAST: Heavy focus on Analytical Reasoning, Quantitative, Verbal, and IQ.
 
-FORMAT INSTRUCTIONS:
-{granularity_instruction}
+INSTRUCTION FOR HIGH DETAIL:
+For EVERY chapter listed, you MUST break it down into explicit SUBTOPICS and core CONCEPTS required by the official syllabus (PMDC / UET / NUST). 
 
-Return ONLY valid JSON matching this schema:
+Example for "Cell Biology":
+- Subtopics: Fluid Mosaic Model, Endomembrane System (Rough/Smooth ER, Golgi, Lysosomes), Organelle Autophagy, Mitochondria Cristae & mtDNA, Chromosome Nucleosome packing (Histones H1-H4), Prokaryote (70S) vs Eukaryote (80S) Ribosomes.
+
+Return ONLY valid JSON with this schema:
 {{
-    "exam_name": "{exam}",
-    "timeframe_type": "{structure_type}",
-    "strategy_title": "Target 100% Mastery Plan for {exam}",
-    "exam_breakdown_notes": "Key paper pattern and weightage strategy",
-    "phases": [
-        {{
-            "phase_name": "Phase Name",
-            "duration": "e.g. Weeks 1-6 or Days 1-10",
-            "primary_goal": "Phase Focus Goal",
-            "weekly_mcq_target": 500
-        }}
-    ],
+    "strategy_title": "Granular Syllabus Roadmap for {exam}",
     "schedule": [
         {{
-            "time_block": "Week 1 (or Phase 1: W1-W6)",
-            "subject_focus": "Primary & Secondary Subjects",
-            "chapters_to_cover": "Exact Chapter Names (e.g. Bio Ch 1-3, Phys Vectors)",
-            "recommended_books": "e.g. Punjab/KPK Textbooks, KIPS, STEP, Past Papers",
-            "action_tasks": "Specific daily morning/evening study tasks",
-            "practice_target": "Exact MCQ count and timed drills",
-            "priority_yield": "High / Medium / Very High"
+            "time_block": "Week 1 (Days 1-7)",
+            "subject_focus": "Biology & Chemistry",
+            "chapters_to_cover": "Bio: Cell Biology | Chem: Basic Concepts & Stoichiometry",
+            "recommended_books": "Punjab/KPK Textbook Board & KIPS Series",
+            "action_tasks": "Read textbook lines, annotate organelle functions, solve 80 MCQs/day",
+            "practice_target": "500 MCQs",
+            "detailed_subtopics": [
+                {{
+                    "chapter": "Cell Biology",
+                    "subtopics": [
+                        "Plasma Membrane: Fluid Mosaic Model, Phospholipid bilayer fluidity & transport mechanisms",
+                        "Organelles: Endoplasmic Reticulum, Golgi apparatus sorting, Lysosomal acidic pH (~5) & storage diseases",
+                        "Energy Transducers: Mitochondria cristae & chloroplast thylakoid structures",
+                        "Nucleus & Chromosomes: Histone octamers, nucleosome folding, and 70S vs 80S ribosome comparison"
+                    ]
+                }},
+                {{
+                    "chapter": "Basic Concepts & Stoichiometry",
+                    "subtopics": [
+                        "Mole concept, Avogadro's number calculations, and molar volume of gases at STP",
+                        "Empirical vs Molecular formula derivations",
+                        "Limiting Reactants identification and percentage yield calculations"
+                    ]
+                }}
+            ]
         }}
     ],
-    "error_log_protocol": ["Rule 1 for tracking mistakes", "Rule 2"],
-    "test_day_strategy": ["Tip 1 for time management on test day", "Tip 2"]
+    "error_log_protocol": ["Rule 1", "Rule 2"],
+    "test_day_strategy": ["Tip 1", "Tip 2"]
 }}
 """
+
 # ============================================================
 # MCQ PROMPT
 # ============================================================
@@ -320,141 +336,98 @@ def show_roadmap(data, exam_name):
     st.warning("⚠️ No roadmap data available. Please regenerate.")
     return
 
-  # Strategy Header & Mentality Card
-  title = data.get("strategy_title", f"Target 100% Mastery Plan for {exam_name}")
-  mentality = data.get("target_score_mentality") or data.get(
-      "exam_breakdown_notes", ""
+  st.subheader(f"🔥 {data.get('strategy_title', 'Granular Mastery Plan')}")
+
+  schedule = data.get("schedule", [])
+  if not schedule:
+    st.warning("⚠️ Schedule items could not be loaded. Please regenerate.")
+    return
+
+  # ---------------------------------------------------------
+  # LAYER 1: Interactive High-Level Checklist Table
+  # ---------------------------------------------------------
+  st.markdown("### 📅 Step 1: High-Level Study Schedule")
+  df = pd.DataFrame(schedule)
+
+  # Filter out nested detailed_subtopics from the main table view to keep it clean
+  table_cols = [
+      c
+      for c in df.columns
+      if c in [
+          "time_block",
+          "subject_focus",
+          "chapters_to_cover",
+          "action_tasks",
+          "practice_target",
+          "recommended_books",
+      ]
+  ]
+  table_df = df[table_cols].copy()
+
+  if "completed" not in table_df.columns:
+    table_df.insert(0, "completed", False)
+
+  edited_df = st.data_editor(
+      table_df,
+      column_config={
+          "completed": st.column_config.CheckboxColumn(
+              "Status", default=False
+          ),
+          "time_block": "Timeline",
+          "subject_focus": "Subject Focus",
+          "chapters_to_cover": "Exact Chapters",
+          "action_tasks": "Daily Study Routine",
+          "practice_target": "MCQ Target",
+          "recommended_books": "Reference Material",
+      },
+      use_container_width=True,
+      hide_index=True,
+      key=f"roadmap_table_{exam_name}",
   )
 
-  st.subheader(f"🔥 {title}")
-  if mentality:
-    st.info(f"🎯 **Strategy & Breakdown:** {mentality}")
+  st.divider()
 
-  # Render Preparation Phases Summary Cards
-  phases = data.get("phases", [])
-  if phases:
-    st.markdown("### 🏆 Preparation Phases")
-    cols = st.columns(len(phases))
-    for idx, phase in enumerate(phases):
-      with cols[idx]:
-        st.metric(
-            label=phase.get("phase_name", f"Phase {idx+1}"),
-            value=phase.get("duration", ""),
-            delta=f"Target: {phase.get('weekly_mcq_target', phase.get('daily_target_mcqs', 0))} MCQs/block",
-        )
-        st.caption(phase.get("primary_goal", ""))
+  # ---------------------------------------------------------
+  # LAYER 2: Granular Subtopic & Micro-Concept Deep Dive
+  # ---------------------------------------------------------
+  st.markdown("### 🔍 Step 2: Detailed Subtopic & Concept Breakdown")
+  st.caption(
+      "Expand any time block below to see the exact subtopics, organelle/reaction mechanisms, and numerical formulas required by the official syllabus."
+  )
+
+  for block in schedule:
+    time_label = block.get("time_block", "Study Block")
+    chapters_label = block.get("chapters_to_cover", "")
+    subtopic_data = block.get("detailed_subtopics", [])
+
+    with st.expander(f"📌 **{time_label}**: {chapters_label}"):
+      if subtopic_data:
+        for item in subtopic_data:
+          ch_name = item.get("chapter", "Chapter Focus")
+          st.markdown(f"#### 📘 {ch_name}")
+
+          subtopics_list = item.get("subtopics", [])
+          for sub in subtopics_list:
+            st.write(f"  • {sub}")
+          st.markdown("---")
+      else:
+        st.info("No detailed subtopic breakdowns available for this block.")
 
   st.divider()
 
-  # High-Yield Interactive Table
-  schedule_data = data.get("schedule") or data.get("day_by_day_schedule", [])
-
-  if schedule_data:
-    st.markdown("### 📅 Comprehensive Preparation Plan & Interactive Tracker")
-    st.caption("💡 Check off completed blocks as you finish studying!")
-
-    # Convert to pandas DataFrame for st.data_editor
-    df = pd.DataFrame(schedule_data)
-
-    # Ensure Completed column exists for interactive tracking
-    if "completed" not in df.columns:
-      df.insert(0, "completed", False)
-
-    # Define exact Streamlit Column Configuration
-    column_config = {
-        "completed": st.column_config.CheckboxColumn(
-            "Status", help="Mark off completed study blocks", default=False
-        ),
-        "time_block": st.column_config.TextColumn(
-            "Timeline", help="Day/Week/Phase Identifier"
-        ),
-        "subject_focus": st.column_config.TextColumn(
-            "Subject Focus", help="Main subject focus for this block"
-        ),
-        "chapters_to_cover": st.column_config.TextColumn(
-            "Exact FSc/A-Level Chapters", help="Specific textbook chapters"
-        ),
-        "recommended_books": st.column_config.TextColumn(
-            "Recommended Books & Resources", help="Suggested reference books"
-        ),
-        "action_tasks": st.column_config.TextColumn(
-            "Primary Study Tasks", help="Morning theory & evening practice"
-        ),
-        "practice_target": st.column_config.TextColumn(
-            "MCQ Target", help="Target questions to solve"
-        ),
-        "active_recall": st.column_config.TextColumn(
-            "Active Recall Technique", help="Method for revision"
-        ),
-        "examiner_trap": st.column_config.TextColumn(
-            "Exam Shortcut / Trap", help="Common traps and shortcuts"
-        ),
-        "target_accuracy": st.column_config.TextColumn(
-            "Accuracy Checkpoint", help="Benchmark score goal"
-        ),
-        "error_log_focus": st.column_config.TextColumn(
-            "Error Log Focus Area", help="What mistakes to log"
-        ),
-        "priority_yield": st.column_config.TextColumn(
-            "Yield Priority", help="Weightage level"
-        ),
-    }
-
-    # Render interactive table
-    edited_df = st.data_editor(
-        df,
-        column_config=column_config,
-        use_container_width=True,
-        hide_index=True,
-        key=f"roadmap_editor_{exam_name}",
-    )
-
-    # Display completion metric based on user checks
-    completed_count = edited_df["completed"].sum()
-    total_count = len(edited_df)
-    progress_pct = (
-        int((completed_count / total_count) * 100) if total_count > 0 else 0
-    )
-
-    st.progress(
-        progress_pct / 100, text=f"Progress: {progress_pct}% Completed"
-    )
-
-  else:
-    st.warning("⚠️ Schedule items could not be loaded. Please regenerate.")
-
-  st.divider()
-
-  # Error Protocol & Test Day Rules
-  col1, col2 = st.columns(2)
-
-  with col1:
-    st.markdown("### ⚠️ Error Log Protocol")
-    for rule in data.get("error_log_protocol", []):
-      st.write("• " + rule)
-
-  with col2:
-    st.markdown("### 🎯 Test Day Strategy & Rules")
-    rules = data.get("test_day_strategy") or data.get("final_execution_rules", [])
-    for rule in rules:
-      st.write("• " + rule)
-
-  # Download Section
-  st.divider()
-  st.markdown("### 📥 Export Execution Plan")
+  # Download Button
   try:
     pdf_bytes = generate_roadmap_pdf(data, exam_name)
     st.download_button(
-        label="📄 Download Detailed PDF Roadmap",
+        label="📄 Download Complete Detailed PDF Plan",
         data=pdf_bytes,
-        file_name=f"{exam_name}_Mastery_Plan.pdf",
+        file_name=f"{exam_name}_Granular_Plan.pdf",
         mime="application/pdf",
         type="primary",
         use_container_width=True,
     )
   except Exception as e:
-    st.error(f"Could not generate PDF: {e}")
-# ============================================================
+    st.error(f"PDF error: {e}")# ============================================================
 # QUIZ ENGINE
 # ============================================================
 
