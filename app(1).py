@@ -203,61 +203,73 @@ def generate_roadmap_pdf(data, exam_name):
 
 def roadmap_prompt(exam, exam_date, level, hours, focus):
   days = max(1, (exam_date - date.today()).days)
+  weeks = max(1, days // 7)
 
-  # Dynamic prompt handling based on timeframe
-  if days > 30:
-    schedule_instruction = f"""
-        Since the duration is long ({days} days), group the plan into 12 to 16 WEEKLY BLOCKS (e.g., Week 1, Week 2, ..., Week 16).
-        For each week, define the exact FSc/A-Level chapters, resource materials, and targets.
+  # 1. Dynamic Granularity Rule to prevent Token Errors
+  if weeks > 16:
+    structure_type = "Macro-Phases (Block of Weeks)"
+    granularity_instruction = f"""
+        Given the long preparation window ({days} days / {weeks} weeks), group the output into 4-6 MACRO PHASES.
+        Do NOT write individual days. Write structured blocks (e.g. Phase 1: Weeks 1-6, Phase 2: Weeks 7-12...).
         """
-    row_label = "Week #"
+  elif weeks > 4:
+    structure_type = "Weekly Schedule"
+    granularity_instruction = f"""
+        Group the schedule into WEEKLY blocks ({weeks} Weeks total).
+        For each week, specify exact chapter targets and MCQ quotas.
+        """
   else:
-    schedule_instruction = f"""
-        Provide a granular DAY-BY-DAY schedule covering all {days} days.
-        """
-    row_label = "Day #"
+    structure_type = "Daily Schedule"
+    granularity_instruction = (
+        f"Provide a granular DAY-BY-DAY schedule covering all {days} days."
+    )
 
   return f"""
-You are a Principal Academic Strategist for Pakistani Entrance Exams ({exam}).
+You are the Chief Academic Strategist for Pakistani Competitive & University Entrance Exams.
 
-Create an intense, actionable, non-casual preparation plan targeting maximum marks.
+STUDENT & EXAM SPECIFICATIONS:
+- Target Test: {exam}
+- Target Date: {exam_date.isoformat()} ({days} days / {weeks} weeks remaining)
+- Starting Level: {level}
+- Commitment: {hours} hours/day
+- Focus Area: {focus or "Full Syllabus High-Yield Coverage"}
 
-TIME HORIZON: {days} Days ({exam_date})
-LEVEL: {level}
-DAILY HOURS: {hours} Hours/day
-FOCUS AREA: {focus or "Overall Syllabus"}
+TEST-SPECIFIC SYLLABUS DIRECTIVES:
+- If MDCAT: Prioritize Biology (81 MCQs), Chemistry (45 MCQs), Physics (36 MCQs), English & Logical Reasoning.
+- If ECAT/UET: Prioritize Math (30 MCQs), Physics (30 MCQs), Chemistry/CS (30 MCQs), English (10 MCQs).
+- If NUST NET: Focus on Math (50%), Physics (30%), English (20%) time-management (~50s per MCQ).
+- If NTS NAT/GAT/FAST: Heavy focus on Analytical Reasoning, Quantitative, Verbal, and IQ.
 
-CRITICAL FORMAT INSTRUCTION:
-{schedule_instruction}
+FORMAT INSTRUCTIONS:
+{granularity_instruction}
 
-Return ONLY valid JSON matching this structure:
-
+Return ONLY valid JSON matching this schema:
 {{
-    "strategy_title": "Game Plan Title",
-    "target_score_mentality": "Strategic mindset to score top marks",
+    "exam_name": "{exam}",
+    "timeframe_type": "{structure_type}",
+    "strategy_title": "Target 100% Mastery Plan for {exam}",
+    "exam_breakdown_notes": "Key paper pattern and weightage strategy",
     "phases": [
         {{
-            "phase_name": "Phase 1: Foundation Crucible",
-            "duration": "Weeks 1-6",
-            "primary_goal": "Cover core textbook theory",
-            "daily_target_mcqs": 60
+            "phase_name": "Phase Name",
+            "duration": "e.g. Weeks 1-6 or Days 1-10",
+            "primary_goal": "Phase Focus Goal",
+            "weekly_mcq_target": 500
         }}
     ],
     "schedule": [
         {{
-            "time_block": "Week 1 (Days 1-7)",
-            "phase": "Phase 1",
-            "subject": "Biology & Chemistry",
-            "chapters": "Bio: Cell Biology | Chem: Stoichiometry",
-            "study_tasks": "Read FSc Book 1 Ch 1 & 2; Draw cell diagrams",
-            "recommended_resource": "Punjab / KPK Textbook Board & KIPS Series",
-            "practice_target": "Solve 80 topic-wise MCQs",
-            "yield_priority": "High-Yield",
-            "weekly_hours": {hours * 7}
+            "time_block": "Week 1 (or Phase 1: W1-W6)",
+            "subject_focus": "Primary & Secondary Subjects",
+            "chapters_to_cover": "Exact Chapter Names (e.g. Bio Ch 1-3, Phys Vectors)",
+            "recommended_books": "e.g. Punjab/KPK Textbooks, KIPS, STEP, Past Papers",
+            "action_tasks": "Specific daily morning/evening study tasks",
+            "practice_target": "Exact MCQ count and timed drills",
+            "priority_yield": "High / Medium / Very High"
         }}
     ],
-    "error_log_protocol": ["Rule 1", "Rule 2"],
-    "final_execution_rules": ["Rule 1", "Rule 2"]
+    "error_log_protocol": ["Rule 1 for tracking mistakes", "Rule 2"],
+    "test_day_strategy": ["Tip 1 for time management on test day", "Tip 2"]
 }}
 """
 # ============================================================
