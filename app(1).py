@@ -180,42 +180,48 @@ from reportlab.platypus import (
 
 
 def sanitize_text(text):
-  """Cleans LaTeX expressions, code fence lines, and unicode font-breaking characters."""
+  """Cleans LaTeX, unknown glyphs, bullet artifacts, and escapes special XML chars."""
   if not text:
     return ""
 
-  # 1. Remove font-breaking visual characters & ASCII code blocks
-  text = re.sub(r"[■─│┌┐└┘├┤┼═#`]+", "", text)
+  # 1. Remove font-breaking visual characters, code blocks, and decorative symbols
+  text = re.sub(r"[■▼▲─│┌┐└┘├┤┼═#`]+", "", text)
 
-  # 2. Convert common LaTeX math expressions to standard HTML text
+  # 2. Fix Double-Bullet artifacts like "• * " or "* * "
+  text = re.sub(r"^[\s\•\*\-\–\—\>]+", "", text)
+
+  # 3. Clean common LaTeX expressions and map symbols to standard Unicode/HTML
   text = re.sub(
-      r"\$([A-Za-z0-9_\-\+\=\s\(\)\/\.]+)\$", r"<i>\1</i>", text
-  )  # Strip inline $math$
+      r"\$([A-Za-z0-9_\-\+\=\s\(\)\/\.,]+)\$", r"<i>\1</i>", text
+  )  # Strip $math$
   text = text.replace("_c", "<sub>c</sub>").replace("_p", "<sub>p</sub>")
   text = (
       text.replace(r"\epsilon_0", "ε₀")
+      .replace("ε■", "ε₀")
       .replace(r"\approx", "≈")
       .replace(r"\rightarrow", "→")
   )
 
-  # 3. Escape HTML reserved characters for ReportLab XML parser
+  # 4. XML Escape for ReportLab parser
   text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
-  # Re-enable basic styling tags
+  # 5. Restore valid ReportLab inline formatting tags
   text = re.sub(r"&lt;i&gt;(.*?)&lt;/i&gt;", r"<i>\1</i>", text)
+  text = re.sub(r"&lt;b&gt;(.*?)&lt;/b&gt;", r"<b>\1</b>", text)
   text = re.sub(r"&lt;sub&gt;(.*?)&lt;/sub&gt;", r"<sub>\1</sub>", text)
   text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", text)
+  text = re.sub(r"\*(.*?)\*", r"<i>\1</i>", text)
 
   return text.strip()
 
 
 def parse_markdown_table(table_lines, body_style):
-  """Converts markdown table text lines into a cleanly formatted ReportLab Table."""
+  """Parses table rows while sanitizing contents."""
   table_data = []
   for line in table_lines:
     clean_line = line.strip()
     if not clean_line or "---" in clean_line or "===" in clean_line:
-      continue  # Skip row separators
+      continue
 
     cols = [col.strip() for col in clean_line.strip("|").split("|")]
     if any(cols):
@@ -227,13 +233,11 @@ def parse_markdown_table(table_lines, body_style):
   if not table_data:
     return None
 
-  # Normalize column counts
   max_cols = max(len(row) for row in table_data)
   for row in table_data:
     while len(row) < max_cols:
       row.append(Paragraph("", body_style))
 
-  # 540 pt total printable width on standard Letter size with 36pt margins
   col_width = 540.0 / max_cols
 
   t = Table(table_data, colWidths=[col_width] * max_cols)
@@ -348,12 +352,12 @@ def generate_pdf_from_text(test_name, exam_date, roadmap_text):
   for line in lines:
     raw_line = line.strip()
 
-    # Detect markdown table rows
+    # Detect markdown tables
     if "|" in raw_line and not raw_line.startswith("#"):
       table_buffer.append(raw_line)
       continue
 
-    # Flush accumulated table buffer when hitting non-table text
+    # Flush accumulated table lines
     if table_buffer:
       compiled_table = parse_markdown_table(table_buffer, table_body_style)
       if compiled_table:
@@ -362,24 +366,28 @@ def generate_pdf_from_text(test_name, exam_date, roadmap_text):
         story.append(Spacer(1, 5))
       table_buffer = []
 
+    # Check if line is a bullet item before stripping leading bullet chars
+    is_bullet = bool(
+        re.match(r"^[\s\•\*\-\–\—\>]+", raw_line)
+    ) and not raw_line.startswith("#")
+
     clean_line = sanitize_text(raw_line)
     if not clean_line:
-      story.append(Spacer(1, 2))
       continue
 
-    # Format Headings & Lists
+    # Format Headings & Text
     if raw_line.startswith("# "):
       story.append(Paragraph(clean_line, title_style))
     elif raw_line.startswith("## "):
       story.append(Paragraph(clean_line, h1_style))
     elif raw_line.startswith("### ") or raw_line.startswith("#### "):
       story.append(Paragraph(clean_line, h2_style))
-    elif raw_line.startswith("- ") or raw_line.startswith("* "):
+    elif is_bullet:
       story.append(Paragraph(f"• {clean_line}", bullet_style))
     else:
       story.append(Paragraph(clean_line, body_style))
 
-  # Flush trailing table buffer if any
+  # Flush remaining table if at the end of text
   if table_buffer:
     compiled_table = parse_markdown_table(table_buffer, table_body_style)
     if compiled_table:
@@ -388,6 +396,7 @@ def generate_pdf_from_text(test_name, exam_date, roadmap_text):
   doc.build(story)
   buffer.seek(0)
   return buffer.getvalue()
+    
 # ============================================================
 # SIDEBAR CONFIGURATION
 # ============================================================
