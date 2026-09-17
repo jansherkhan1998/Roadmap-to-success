@@ -84,7 +84,7 @@ def ask_gemini(prompt, json_mode=False, max_retries=5):
   config = types.GenerateContentConfig(
       temperature=0.3,
       max_output_tokens=8192,  # Ensures long structured outputs fit
-      response_mime_type="application/json" if json_mode else "text/plain",
+      response_mime_type="application/json", #if json_mode else "text/plain",
   )
 
   # Automatic retry logic for temporary server-side spikes (503/429 errors)
@@ -208,47 +208,35 @@ def roadmap_prompt(exam, exam_date, level, hours, focus):
   days = max(1, (exam_date - date.today()).days)
   weeks = max(1, days // 7)
 
-  # Prompt with clean strings and escaped quotes
   return f"""
-You are the Chief Academic Strategist for Pakistani Entrance Exams ({exam}).
+You are an experienced Chief Academic Strategist for Pakistani universites Entrance Exams ({exam}).
 
 Target Exam: {exam}
 Timeframe: {days} Days ({weeks} Weeks)
 Level: {level} | Hours/Day: {hours} | Focus: {focus or "Full Syllabus High-Yield"}
 
-INSTRUCTION FOR HIGH DETAIL:
-For EVERY chapter listed, you MUST break it down into explicit SUBTOPICS and core CONCEPTS required by the official syllabus (PMDC / UET / NUST).
-
-Example breakdown for Cell Biology:
-- Subtopics: Fluid Mosaic Model, Endomembrane System, Organelle Autophagy, Mitochondria Cristae, Chromosome Nucleosome packing, Prokaryote vs Eukaryote Ribosomes.
+IMPORTANT INSTRUCTION FOR CONCISE HIGH-DETAIL:
+Provide a structured syllabus roadmap. For every phase, break down the core chapters into 3-4 bullet-point subtopics. Keep explanations brief and focused on official syllabus terms to avoid JSON length limits.
 
 Return ONLY valid JSON matching this exact structure:
 {{
     "strategy_title": "Granular Syllabus Roadmap for {exam}",
     "schedule": [
         {{
-            "time_block": "Week 1 (Days 1-7)",
-            "subject_focus": "Biology & Chemistry",
-            "chapters_to_cover": "Bio: Cell Biology | Chem: Basic Concepts",
+            "time_block": "Weeks 1-6",
+            "subject_focus": "Biology & Chemistry Foundations",
+            "chapters_to_cover": "Bio: Cell Biology, Enzymes | Chem: Basic Concepts",
             "recommended_books": "Punjab/KPK Textbook Board & KIPS Series",
-            "action_tasks": "Read textbook lines, annotate organelle functions, solve 80 MCQs/day",
+            "action_tasks": "Read textbook lines, solve 80 MCQs daily",
             "practice_target": "500 MCQs",
             "detailed_subtopics": [
                 {{
                     "chapter": "Cell Biology",
                     "subtopics": [
-                        "Plasma Membrane: Fluid Mosaic Model, Phospholipid bilayer fluidity and transport mechanisms",
-                        "Organelles: Endoplasmic Reticulum, Golgi apparatus sorting, Lysosomal acidic pH and storage diseases",
-                        "Energy Transducers: Mitochondria cristae and chloroplast thylakoid structures",
-                        "Nucleus and Chromosomes: Histone octamers, nucleosome folding, and 70S vs 80S ribosome comparison"
-                    ]
-                }},
-                {{
-                    "chapter": "Basic Concepts and Stoichiometry",
-                    "subtopics": [
-                        "Mole concept, Avogadros number calculations, and molar volume of gases at STP",
-                        "Empirical vs Molecular formula derivations",
-                        "Limiting Reactants identification and percentage yield calculations"
+                        "Fluid Mosaic Model: Phospholipid bilayer and transport",
+                        "Organelles: ER, Golgi bodies, Lysosomes, Mitochondria",
+                        "Nucleus & Chromosomes: Histones and nucleosome folding",
+                        "Cell Comparisons: Prokaryote (70S) vs Eukaryote (80S) ribosomes"
                     ]
                 }}
             ]
