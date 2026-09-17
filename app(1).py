@@ -153,10 +153,8 @@ def generate_roadmap_pdf(data, exam_name):
 
   # Title
   pdf.set_font("Helvetica", "B", 16)
-  pdf.cell(
-      0, 10, f"Preparation Roadmap: {exam_name}", new_x="LMARGIN", new_y="NEXT"
-  )
-  pdf.ln(5)
+  pdf.cell(0, 10, f"Preparation Roadmap: {exam_name}", ln=1)
+  pdf.ln(3)
 
   # Strategy Overview
   pdf.set_font("Helvetica", "B", 12)
@@ -165,73 +163,91 @@ def generate_roadmap_pdf(data, exam_name):
       .encode("latin-1", "replace")
       .decode("latin-1")
   )
-  pdf.cell(0, 8, title_text, new_x="LMARGIN", new_y="NEXT")
+  pdf.cell(0, 8, title_text, ln=1)
   pdf.ln(3)
 
-  # Schedule Table
+  # Schedule List (Bullet/Section style to prevent table width overflow crashes)
   schedule = data.get("schedule", [])
   if schedule:
-    pdf.set_font("Helvetica", "B", 11)
-    pdf.cell(0, 8, "Structured Schedule", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 8, "Structured Schedule Overview", ln=1)
     pdf.ln(2)
 
-    with pdf.table(
-        col_widths=(25, 30, 45, 60, 20), text_align="LEFT"
-    ) as table:
-      header = table.row()
-      header.cell("Timeline")
-      header.cell("Subject")
-      header.cell("Chapters Covered")
-      header.cell("Action Plan")
-      header.cell("MCQ Target")
+    for i, row_data in enumerate(schedule, 1):
+      time_block = (
+          str(row_data.get("time_block", f"Phase {i}"))
+          .encode("latin-1", "replace")
+          .decode("latin-1")
+      )
+      subj_focus = (
+          str(row_data.get("subject_focus", ""))
+          .encode("latin-1", "replace")
+          .decode("latin-1")
+      )
+      chapters = (
+          str(row_data.get("chapters_to_cover", ""))
+          .encode("latin-1", "replace")
+          .decode("latin-1")
+      )
+      actions = (
+          str(row_data.get("action_tasks", ""))
+          .encode("latin-1", "replace")
+          .decode("latin-1")
+      )
+      mcq_target = (
+          str(row_data.get("practice_target", ""))
+          .encode("latin-1", "replace")
+          .decode("latin-1")
+      )
 
-      for row_data in schedule:
-        row = table.row()
-        row.cell(str(row_data.get("time_block", "")))
-        row.cell(
-            str(row_data.get("subject_focus", ""))
-            .encode("latin-1", "replace")
-            .decode("latin-1")
-        )
-        row.cell(
-            str(row_data.get("chapters_to_cover", ""))
-            .encode("latin-1", "replace")
-            .decode("latin-1")
-        )
-        row.cell(
-            str(row_data.get("action_tasks", ""))
-            .encode("latin-1", "replace")
-            .decode("latin-1")
-        )
-        row.cell(str(row_data.get("practice_target", "")))
+      # Timeline & Focus Header
+      pdf.set_font("Helvetica", "B", 10)
+      pdf.cell(0, 6, f"{i}. Timeline: {time_block} | Focus: {subj_focus}", ln=1)
 
-  pdf.ln(5)
+      # Details
+      pdf.set_font("Helvetica", "", 9)
+      if chapters:
+        pdf.multi_cell(0, 5, f"   Chapters: {chapters}")
+      if actions:
+        pdf.multi_cell(0, 5, f"   Daily Routine: {actions}")
+      if mcq_target:
+        pdf.multi_cell(0, 5, f"   Practice Target: {mcq_target}")
+
+      pdf.ln(2)
+
+  pdf.ln(3)
 
   # Subtopic Details Breakdown
   pdf.set_font("Helvetica", "B", 12)
-  pdf.cell(0, 8, "Detailed Subtopic Breakdown", new_x="LMARGIN", new_y="NEXT")
+  pdf.cell(0, 8, "Detailed Subtopic Breakdown", ln=1)
   pdf.ln(2)
 
-  pdf.set_font("Helvetica", "", 10)
+  pdf.set_font("Helvetica", "", 9)
   for block in schedule:
-    time_block = block.get("time_block", "Phase")
+    time_block = (
+        str(block.get("time_block", "Phase"))
+        .encode("latin-1", "replace")
+        .decode("latin-1")
+    )
     subtopics_group = block.get("detailed_subtopics", [])
 
     if subtopics_group:
       pdf.set_font("Helvetica", "B", 10)
-      pdf.cell(0, 6, f"[{time_block}] Subtopics:", new_x="LMARGIN", new_y="NEXT")
+      pdf.cell(0, 6, f"[{time_block}] Subtopics:", ln=1)
       pdf.set_font("Helvetica", "", 9)
 
       for item in subtopics_group:
         if isinstance(item, dict):
           ch = (
-              item.get("chapter", "Chapter")
+              str(item.get("chapter", "Chapter"))
               .encode("latin-1", "replace")
               .decode("latin-1")
           )
-          pdf.cell(0, 5, f"  * Chapter: {ch}", new_x="LMARGIN", new_y="NEXT")
+          pdf.cell(0, 5, f"  * Chapter: {ch}", ln=1)
           for sub in item.get("subtopics", []):
-            sub_clean = sub.encode("latin-1", "replace").decode("latin-1")
+            sub_clean = (
+                str(sub).encode("latin-1", "replace").decode("latin-1")
+            )
             pdf.multi_cell(0, 5, f"    - {sub_clean}")
         elif isinstance(item, str):
           sub_clean = item.encode("latin-1", "replace").decode("latin-1")
@@ -240,7 +256,6 @@ def generate_roadmap_pdf(data, exam_name):
       pdf.ln(2)
 
   return bytes(pdf.output())
-
 
 # ============================================================
 # ROADMAP PROMPT
