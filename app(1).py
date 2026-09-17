@@ -81,7 +81,7 @@ def ask_gemini(prompt, json_mode=False, max_retries=5):
   for attempt in range(max_retries):
     try:
       response = client.models.generate_content(
-          model="gemini-2.5-flash", contents=prompt, config=config
+          model="gemini-3.5-flash", contents=prompt, config=config
       )
       return response.text
     except APIError as e:
