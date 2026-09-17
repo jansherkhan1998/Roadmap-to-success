@@ -217,7 +217,7 @@ if generate_button:
       client = genai.Client(api_key=current_key)
 
       response = client.models.generate_content(
-          model="gemini-2.5-flash",
+          model="gemini-3.5-flash",
           contents=build_roadmap_prompt(
               selected_test,
               target_date.strftime("%d %B %Y"),
