@@ -148,6 +148,7 @@ def parse_ai_json(response_text):
 
 def generate_roadmap_pdf(data, exam_name):
   pdf = FPDF()
+  pdf.set_margins(10, 10, 10)
   pdf.add_page()
   pdf.set_auto_page_break(auto=True, margin=15)
 
@@ -166,7 +167,7 @@ def generate_roadmap_pdf(data, exam_name):
   pdf.cell(0, 8, title_text, ln=1)
   pdf.ln(3)
 
-  # Schedule List (Bullet/Section style to prevent table width overflow crashes)
+  # Schedule Overview
   schedule = data.get("schedule", [])
   if schedule:
     pdf.set_font("Helvetica", "B", 12)
@@ -204,7 +205,7 @@ def generate_roadmap_pdf(data, exam_name):
       pdf.set_font("Helvetica", "B", 10)
       pdf.cell(0, 6, f"{i}. Timeline: {time_block} | Focus: {subj_focus}", ln=1)
 
-      # Details
+      # Details using explicit w=0 to prevent margin overflow errors
       pdf.set_font("Helvetica", "", 9)
       if chapters:
         pdf.multi_cell(0, 5, f"   Chapters: {chapters}")
@@ -222,7 +223,6 @@ def generate_roadmap_pdf(data, exam_name):
   pdf.cell(0, 8, "Detailed Subtopic Breakdown", ln=1)
   pdf.ln(2)
 
-  pdf.set_font("Helvetica", "", 9)
   for block in schedule:
     time_block = (
         str(block.get("time_block", "Phase"))
@@ -256,7 +256,7 @@ def generate_roadmap_pdf(data, exam_name):
       pdf.ln(2)
 
   return bytes(pdf.output())
-
+    
 # ============================================================
 # ROADMAP PROMPT
 # ============================================================
