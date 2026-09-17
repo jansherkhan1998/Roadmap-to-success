@@ -311,54 +311,149 @@ Return ONLY valid JSON:
 # ============================================================
 
 
+import pandas as pd
+import streamlit as st
+
+
 def show_roadmap(data, exam_name):
   if not data:
-    st.warning("No roadmap data available. Please regenerate.")
+    st.warning("⚠️ No roadmap data available. Please regenerate.")
     return
 
-  st.subheader("🗺️ Your Detailed AI Preparation Roadmap")
+  # Strategy Header & Mentality Card
+  title = data.get("strategy_title", f"Target 100% Mastery Plan for {exam_name}")
+  mentality = data.get("target_score_mentality") or data.get(
+      "exam_breakdown_notes", ""
+  )
 
-  # Only render st.info if the summary actually contains text
-  summary = data.get("summary") or data.get("strategy_title")
-  if summary:
-    st.info(summary)
+  st.subheader(f"🔥 {title}")
+  if mentality:
+    st.info(f"🎯 **Strategy & Breakdown:** {mentality}")
 
-  if data.get("assumptions"):
-    with st.expander("Notes & Verification"):
-      for item in data["assumptions"]:
-        st.write("• " + item)
+  # Render Preparation Phases Summary Cards
+  phases = data.get("phases", [])
+  if phases:
+    st.markdown("### 🏆 Preparation Phases")
+    cols = st.columns(len(phases))
+    for idx, phase in enumerate(phases):
+      with cols[idx]:
+        st.metric(
+            label=phase.get("phase_name", f"Phase {idx+1}"),
+            value=phase.get("duration", ""),
+            delta=f"Target: {phase.get('weekly_mcq_target', phase.get('daily_target_mcqs', 0))} MCQs/block",
+        )
+        st.caption(phase.get("primary_goal", ""))
 
-  # Render schedule table
-  schedule = data.get("schedule") or data.get("day_by_day_schedule")
-  if schedule:
-    st.subheader("📅 Detailed Schedule")
-    st.table(schedule)
-  else:
-    st.warning(
-        "Schedule items could not be loaded. Try regenerating the roadmap."
+  st.divider()
+
+  # High-Yield Interactive Table
+  schedule_data = data.get("schedule") or data.get("day_by_day_schedule", [])
+
+  if schedule_data:
+    st.markdown("### 📅 Comprehensive Preparation Plan & Interactive Tracker")
+    st.caption("💡 Check off completed blocks as you finish studying!")
+
+    # Convert to pandas DataFrame for st.data_editor
+    df = pd.DataFrame(schedule_data)
+
+    # Ensure Completed column exists for interactive tracking
+    if "completed" not in df.columns:
+      df.insert(0, "completed", False)
+
+    # Define exact Streamlit Column Configuration
+    column_config = {
+        "completed": st.column_config.CheckboxColumn(
+            "Status", help="Mark off completed study blocks", default=False
+        ),
+        "time_block": st.column_config.TextColumn(
+            "Timeline", help="Day/Week/Phase Identifier"
+        ),
+        "subject_focus": st.column_config.TextColumn(
+            "Subject Focus", help="Main subject focus for this block"
+        ),
+        "chapters_to_cover": st.column_config.TextColumn(
+            "Exact FSc/A-Level Chapters", help="Specific textbook chapters"
+        ),
+        "recommended_books": st.column_config.TextColumn(
+            "Recommended Books & Resources", help="Suggested reference books"
+        ),
+        "action_tasks": st.column_config.TextColumn(
+            "Primary Study Tasks", help="Morning theory & evening practice"
+        ),
+        "practice_target": st.column_config.TextColumn(
+            "MCQ Target", help="Target questions to solve"
+        ),
+        "active_recall": st.column_config.TextColumn(
+            "Active Recall Technique", help="Method for revision"
+        ),
+        "examiner_trap": st.column_config.TextColumn(
+            "Exam Shortcut / Trap", help="Common traps and shortcuts"
+        ),
+        "target_accuracy": st.column_config.TextColumn(
+            "Accuracy Checkpoint", help="Benchmark score goal"
+        ),
+        "error_log_focus": st.column_config.TextColumn(
+            "Error Log Focus Area", help="What mistakes to log"
+        ),
+        "priority_yield": st.column_config.TextColumn(
+            "Yield Priority", help="Weightage level"
+        ),
+    }
+
+    # Render interactive table
+    edited_df = st.data_editor(
+        df,
+        column_config=column_config,
+        use_container_width=True,
+        hide_index=True,
+        key=f"roadmap_editor_{exam_name}",
     )
 
-  if data.get("final_week") or data.get("final_execution_rules"):
-    st.subheader("🔥 Final Strategy")
-    rules = data.get("final_week") or data.get("final_execution_rules")
-    for item in rules:
-      st.write("• " + item)
+    # Display completion metric based on user checks
+    completed_count = edited_df["completed"].sum()
+    total_count = len(edited_df)
+    progress_pct = (
+        int((completed_count / total_count) * 100) if total_count > 0 else 0
+    )
 
-  # Download PDF Section
+    st.progress(
+        progress_pct / 100, text=f"Progress: {progress_pct}% Completed"
+    )
+
+  else:
+    st.warning("⚠️ Schedule items could not be loaded. Please regenerate.")
+
   st.divider()
-  st.subheader("📥 Download Roadmap")
+
+  # Error Protocol & Test Day Rules
+  col1, col2 = st.columns(2)
+
+  with col1:
+    st.markdown("### ⚠️ Error Log Protocol")
+    for rule in data.get("error_log_protocol", []):
+      st.write("• " + rule)
+
+  with col2:
+    st.markdown("### 🎯 Test Day Strategy & Rules")
+    rules = data.get("test_day_strategy") or data.get("final_execution_rules", [])
+    for rule in rules:
+      st.write("• " + rule)
+
+  # Download Section
+  st.divider()
+  st.markdown("### 📥 Export Execution Plan")
   try:
     pdf_bytes = generate_roadmap_pdf(data, exam_name)
     st.download_button(
         label="📄 Download Detailed PDF Roadmap",
         data=pdf_bytes,
-        file_name=f"{exam_name}_Roadmap.pdf",
+        file_name=f"{exam_name}_Mastery_Plan.pdf",
         mime="application/pdf",
         type="primary",
+        use_container_width=True,
     )
   except Exception as e:
-    st.error(f"Could not generate PDF download: {e}")
-
+    st.error(f"Could not generate PDF: {e}")
 # ============================================================
 # QUIZ ENGINE
 # ============================================================
