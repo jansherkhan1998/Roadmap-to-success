@@ -114,15 +114,19 @@ def clean_json(text):
 
   if text.startswith("```"):
     lines = text.splitlines()
-
     if lines[-1].strip().startswith("```"):
       lines = lines[1:-1]
     else:
       lines = lines[1:]
-
     text = "\n".join(lines).strip()
 
-  return json.loads(text)
+  try:
+    return json.loads(text)
+  except json.JSONDecodeError as e:
+    st.error(
+        f"Failed to parse AI output into JSON: {e}. Please click 'Generate' again."
+    )
+    return {}
 
 
 # ============================================================
