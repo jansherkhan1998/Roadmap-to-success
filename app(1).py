@@ -22,7 +22,7 @@ st.write(
 
 
 # ============================================================
-# HELPER FUNCTIONS
+# HELPER FUNCTIONS & TEST SPECIFICATIONS
 # ============================================================
 
 
@@ -40,28 +40,75 @@ def get_gemini_api_key():
   return os.getenv("GEMINI_API_KEY", "")
 
 
+def get_test_pattern_info(test_name):
+  """Returns strict pattern metadata for official Pakistani entrance tests."""
+  patterns = {
+      "MDCAT": (
+          "180 MCQs total (3 Hours, No Negative Marking). Breakdown: Biology 81"
+          " MCQs (45%), Chemistry 45 MCQs (25%), Physics 36 MCQs (20%),"
+          " English 9 MCQs (5%), Logical Reasoning 9 MCQs (5%)."
+      ),
+      "ECAT / Engineering Tests": (
+          "100 MCQs total (100 Minutes, 400 Marks). Breakdown: Mathematics 30"
+          " MCQs, Physics 30 MCQs, Chemistry/CS 30 MCQs, English 10 MCQs."
+      ),
+      "NUST NET": (
+          "200 MCQs total (3 Hours, No Negative Marking). Breakdown:"
+          " Mathematics 100 MCQs (50%), Physics 60 MCQs (30%), English 40 MCQs"
+          " (20%)."
+      ),
+      "FAST": (
+          "120 MCQs total across Advanced Math, Basic Math, Physics, English,"
+          " and IQ/Analytical with negative marking applied to specific"
+          " sections."
+      ),
+      "NTS NAT": (
+          "90 MCQs total (2 Hours). Breakdown: Verbal 20 MCQs, Analytical 20"
+          " MCQs, Quantitative 20 MCQs, Subject Specific 30 MCQs."
+      ),
+      "ISSB Initial Computer Test": (
+          "Computerized timed test: Verbal Intelligence Test (approx 84"
+          " questions / 30 mins) + Non-Verbal Intelligence Test (approx 64"
+          " questions / 30 mins) + Academic Test (50 questions / 25 mins)."
+      ),
+      "Army Medical College (AMC) Test": (
+          "Intelligence Test (Verbal + Non-Verbal) followed by Academic Test"
+          " covering Biology, Chemistry, Physics, and English."
+      ),
+  }
+  return patterns.get(
+      test_name,
+      "Follow official standard test distribution and pattern for this"
+      " specific university/test.",
+  )
+
+
 def build_roadmap_prompt(
     test_name, exam_date, days_remaining, level, hours_per_day
 ):
+  pattern_info = get_test_pattern_info(test_name)
+
   return f"""
 You are an expert Pakistani entrance-test preparation strategist, academic planner, and curriculum specialist.
 
 Create a practical personalized preparation roadmap for:
 
 Target Test: {test_name}
+Official Pattern Details: {pattern_info}
 Target Exam Date: {exam_date}
 Days Remaining: {days_remaining}
 Current Preparation Level: {level}
 Daily Available Study Hours: {hours_per_day}
 
-The student is preparing in Pakistan. Tailor the roadmap to commonly relevant Pakistani education and entrance-test patterns, including PMDC/medical tests, NUMS where applicable, HEC-related aptitude patterns, provincial boards, FSc/A-Level preparation, engineering entrance tests, and computer-based testing.
+CRITICAL ACCURACY REQUIREMENT:
+You MUST strictly adhere to the exact official paper pattern provided above (e.g., if MDCAT, use exactly 180 MCQs total with 81 Bio, 45 Chem, 36 Physics, 9 English, 9 Logical Reasoning; if NUST NET, use 200 MCQs). Do NOT cite outdated patterns like 200 MCQs for MDCAT.
 
-Do not invent an official syllabus. If the exact pattern can vary by institution or year, clearly state that.
+The student is preparing in Pakistan. Tailor the roadmap to commonly relevant Pakistani education and entrance-test patterns, including PMDC/medical tests, NUMS, HEC-related aptitude patterns, provincial boards, FSc/A-Level preparation, engineering entrance tests, and computer-based testing.
 
 Include:
 1. Executive summary
-2. Exam structure and common sections
-3. High-yield subjects and topics in a table
+2. Official Exam structure & Exact Section Distribution (Specify total MCQs, timings, and marking criteria)
+3. High-yield subjects and topics in a structured table
 4. Phase-wise plan:
    - Phase 1: Syllabus Coverage / Concept Building
    - Phase 2: Revision / Weak Area Improvement
@@ -70,7 +117,7 @@ Include:
 6. Daily study schedule based on {hours_per_day} hours
 7. MCQ and mock-test strategy
 8. Time-management strategy
-9. Negative-marking strategy only if applicable
+9. Negative-marking strategy (only where applicable)
 10. Computer-based-test strategy where relevant
 11. Weekly performance tracking table
 12. Final 7-day strategy
@@ -84,16 +131,17 @@ Beginner = more concepts,
 Intermediate = balanced concepts/revision/practice,
 Advanced = more testing, speed, revision, and weak-area correction.
 
-Use clear Markdown, headings, tables, and bullet points. Avoid vague advice. Give measurable targets.
+Use clear Markdown, headings, tables, and bullet points. Avoid vague advice.
 Today's date is {date.today()}.
 """
 
 
 def build_mcq_prompt(test_name, phase_name, subject, count=5):
+  pattern_info = get_test_pattern_info(test_name)
   return f"""
-Generate {count} high-yield multiple choice questions (MCQs) for Pakistani entrance test preparation.
+Generate {count} high-yield multiple choice questions (MCQs) for Pakistani entrance test preparation matching the updated exam format.
 
-Target Exam: {test_name}
+Target Exam: {test_name} ({pattern_info})
 Study Phase: {phase_name}
 Subject: {subject}
 
@@ -154,7 +202,7 @@ with st.sidebar:
 
   auto_key = get_gemini_api_key()
   if auto_key:
-    st.success("✅ API Key automatically loaded from system.")
+    st.success("✅ API Key automatically loaded.")
     api_key_input = auto_key
   else:
     api_key_input = st.text_input(
@@ -191,7 +239,7 @@ with col3:
   st.metric("Preparation Level", preparation_level)
 
 # ============================================================
-# GENERATION LOGIC
+# GENERATION LOGIC (GEMINI 3.5 FLASH)
 # ============================================================
 
 if generate_button:
@@ -213,7 +261,9 @@ if generate_button:
     st.stop()
 
   try:
-    with st.spinner("🤖 Generating your personalized roadmap..."):
+    with st.spinner(
+        "🤖 Generating your personalized roadmap using Gemini 3.5 Flash..."
+    ):
       client = genai.Client(api_key=current_key)
 
       response = client.models.generate_content(
@@ -329,10 +379,10 @@ if "roadmap" in st.session_state:
       else:
         current_key = get_gemini_api_key()
         try:
-          with st.spinner("Generating quiz questions..."):
+          with st.spinner("Generating quiz questions via Gemini 3.5 Flash..."):
             client = genai.Client(api_key=current_key)
             mcq_res = client.models.generate_content(
-                model="gemini-2.5-flash",
+                model="gemini-3.5-flash",
                 contents=build_mcq_prompt(
                     st.session_state["test"],
                     selected_phase,
@@ -340,7 +390,7 @@ if "roadmap" in st.session_state:
                     mcq_count,
                 ),
             )
-            # Standard cleanup for potential code blocks
+
             clean_json = mcq_res.text.strip()
             if clean_json.startswith("```"):
               clean_json = clean_json.split("\n", 1)[1].rsplit("\n", 1)[0]
