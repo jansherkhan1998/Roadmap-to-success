@@ -85,8 +85,9 @@ def get_test_pattern_info(test_name):
       "Follow official standard test distribution and pattern for this"
       " specific university/test.",
   )
-
-
+#######################################################
+#Propmt generator
+######################################################3
 def build_roadmap_prompt(
     test_name, exam_date, days_remaining, level, hours_per_day
 ):
@@ -130,8 +131,9 @@ Include:
 Use clear Markdown, headings, and bullet points. Avoid vague advice.
 Today's date is {date.today()}.
 """
-
-
+############################################################################
+#MCQs Making Code
+############################################################################
 def build_mcq_prompt(test_name, phase_name, subject, count=10):
   pattern_info = get_test_pattern_info(test_name)
   return f"""
@@ -160,6 +162,85 @@ Return ONLY valid JSON with this exact structure:
 # ============================================================
 
 
+from datetime import date
+import io
+import re
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.platypus import (
+    HRFlowable,
+    KeepTogether,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
+
+
+def clean_markdown_text(text):
+  """Removes raw markdown bold/italic tags and cleans special characters for ReportLab xml parser."""
+  text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+  # Convert markdown bold **text** to HTML <b>text</b>
+  text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", text)
+  # Convert markdown italic *text* or _text_ to HTML <i>text</i>
+  text = re.sub(r"\*(.*?)\*", r"<i>\1</i>", text)
+  return text.strip()
+
+
+def parse_markdown_table(table_lines, body_style):
+  """Parses raw markdown table lines into a styled ReportLab Table object."""
+  table_data = []
+  for line in table_lines:
+    if "---" in line:
+      continue  # Skip header separators
+    # Split columns by pipe |
+    columns = [
+        col.strip() for col in line.strip().strip("|").split("|") if col != ""
+    ]
+    if columns:
+      formatted_row = [
+          Paragraph(clean_markdown_text(col), body_style) for col in columns
+      ]
+      table_data.append(formatted_row)
+
+  if not table_data:
+    return None
+
+  # Determine maximum columns
+  max_cols = max(len(row) for row in table_data)
+
+  # Normalize all rows to equal length
+  for row in table_data:
+    while len(row) < max_cols:
+      row.append(Paragraph("", body_style))
+
+  col_width = 540 / max_cols  # Equal distribution across printable area
+
+  t = Table(table_data, colWidths=[col_width] * max_cols)
+  t.setStyle(
+      TableStyle([
+          ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1E3A8A")),
+          ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+          ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+          ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+          ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+          ("TOPPADDING", (0, 0), (-1, -1), 6),
+          ("LEFTPADDING", (0, 0), (-1, -1), 6),
+          ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+          (
+              "ROWBACKGROUNDS",
+              (0, 1),
+              (-1, -1),
+              [colors.white, colors.HexColor("#F8FAFC")],
+          ),
+          ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
+      ])
+  )
+  return t
+
+
 def generate_pdf_from_text(test_name, exam_date, roadmap_text):
   buffer = io.BytesIO()
   doc = SimpleDocTemplate(
@@ -170,15 +251,16 @@ def generate_pdf_from_text(test_name, exam_date, roadmap_text):
       topMargin=36,
       bottomMargin=36,
   )
+
   styles = getSampleStyleSheet()
 
   title_style = ParagraphStyle(
       "DocTitle",
       parent=styles["Heading1"],
-      fontSize=18,
-      leading=22,
+      fontSize=20,
+      leading=24,
       textColor=colors.HexColor("#1E3A8A"),
-      spaceAfter=6,
+      spaceAfter=4,
   )
   subtitle_style = ParagraphStyle(
       "DocSubTitle",
@@ -186,7 +268,7 @@ def generate_pdf_from_text(test_name, exam_date, roadmap_text):
       fontSize=10,
       leading=14,
       textColor=colors.HexColor("#4B5563"),
-      spaceAfter=12,
+      spaceAfter=10,
   )
   h1_style = ParagraphStyle(
       "H1",
@@ -196,6 +278,7 @@ def generate_pdf_from_text(test_name, exam_date, roadmap_text):
       textColor=colors.HexColor("#1E40AF"),
       spaceBefore=12,
       spaceAfter=6,
+      keepWithNext=True,
   )
   h2_style = ParagraphStyle(
       "H2",
@@ -205,6 +288,7 @@ def generate_pdf_from_text(test_name, exam_date, roadmap_text):
       textColor=colors.HexColor("#1F2937"),
       spaceBefore=10,
       spaceAfter=4,
+      keepWithNext=True,
   )
   body_style = ParagraphStyle(
       "Body",
@@ -214,12 +298,29 @@ def generate_pdf_from_text(test_name, exam_date, roadmap_text):
       textColor=colors.HexColor("#374151"),
       spaceAfter=4,
   )
+  table_body_style = ParagraphStyle(
+      "TableBody", parent=body_style, fontSize=8, leading=11
+  )
   bullet_style = ParagraphStyle(
       "Bullet",
       parent=body_style,
-      leftIndent=15,
-      firstLineIndent=-10,
+      leftIndent=12,
+      firstLineIndent=-8,
       spaceAfter=3,
+  )
+  callout_style = ParagraphStyle(
+      "Callout",
+      parent=body_style,
+      fontSize=9,
+      leading=13,
+      textColor=colors.HexColor("#1E3A8A"),
+      backColor=colors.HexColor("#EFF6FF"),
+      borderColor=colors.HexColor("#3B82F6"),
+      borderWidth=1,
+      borderPadding=8,
+      spaceBefore=6,
+      spaceAfter=6,
+      borderRadius=4,
   )
 
   story = [
@@ -231,37 +332,67 @@ def generate_pdf_from_text(test_name, exam_date, roadmap_text):
       ),
       HRFlowable(
           width="100%",
-          thickness=1,
-          color=colors.HexColor("#CBD5E1"),
-          spaceAfter=10,
+          thickness=1.5,
+          color=colors.HexColor("#1E3A8A"),
+          spaceAfter=12,
       ),
   ]
 
-  for line in roadmap_text.split("\n"):
-    clean = line.strip()
-    if not clean:
-      story.append(Spacer(1, 4))
+  lines = roadmap_text.split("\n")
+  table_buffer = []
+  in_table = False
+
+  for line in lines:
+    raw_line = line.strip()
+
+    # Detect and accumulate markdown tables
+    if "|" in raw_line and not raw_line.startswith("#"):
+      in_table = True
+      table_buffer.append(raw_line)
+      continue
+    elif in_table:
+      # End of table detected
+      in_table = False
+      compiled_table = parse_markdown_table(table_buffer, table_body_style)
+      if compiled_table:
+        story.append(Spacer(1, 4))
+        story.append(compiled_table)
+        story.append(Spacer(1, 6))
+      table_buffer = []
+
+    if not raw_line:
+      story.append(Spacer(1, 3))
       continue
 
-    clean_text = (
-        clean.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    )
+    clean_text = clean_markdown_text(raw_line)
 
+    # Convert titles and section headers
     if clean_text.startswith("# "):
-      story.append(Paragraph(clean_text[2:], title_style))
+      story.append(
+          Paragraph(clean_text.replace("# ", ""), title_style)
+      )  #[cite: 1]
     elif clean_text.startswith("## "):
-      story.append(Paragraph(clean_text[3:], h1_style))
+      story.append(Paragraph(clean_text.replace("## ", ""), h1_style))
     elif clean_text.startswith("### "):
-      story.append(Paragraph(clean_text[4:], h2_style))
+      story.append(Paragraph(clean_text.replace("### ", ""), h2_style))
     elif clean_text.startswith("- ") or clean_text.startswith("* "):
-      story.append(Paragraph(f"• {clean_text[2:]}", bullet_style))
+      bullet_content = clean_text[2:]
+      story.append(Paragraph(f"• {bullet_content}", bullet_style))
+    elif raw_line.startswith("┌") or raw_line.startswith("|"):
+      # Convert text diagram boxes into callout containers
+      story.append(Paragraph(clean_text.replace("|", ""), callout_style))
     else:
       story.append(Paragraph(clean_text, body_style))
+
+  # Process any trailing table left in buffer
+  if table_buffer:
+    compiled_table = parse_markdown_table(table_buffer, table_body_style)
+    if compiled_table:
+      story.append(compiled_table)
 
   doc.build(story)
   buffer.seek(0)
   return buffer.getvalue()
-
 
 # ============================================================
 # SIDEBAR CONFIGURATION
