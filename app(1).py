@@ -187,9 +187,9 @@ def roadmap_prompt(exam, exam_date, level, hours, focus):
   days = max(1, (exam_date - date.today()).days)
 
   # Dynamic prompt handling based on timeframe
-  if days > 60:
+  if days > 30:
     schedule_instruction = f"""
-        Since the duration is long ({days} days), group the plan into 25 to 30 WEEKLY BLOCKS (e.g., Week 1, Week 2, ..., Week 30).
+        Since the duration is long ({days} days), group the plan into 12 to 16 WEEKLY BLOCKS (e.g., Week 1, Week 2, ..., Week 16).
         For each week, define the exact FSc/A-Level chapters, resource materials, and targets.
         """
     row_label = "Week #"
