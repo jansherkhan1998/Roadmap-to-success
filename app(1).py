@@ -300,29 +300,36 @@ Return ONLY valid JSON:
 
 
 def show_roadmap(data, exam_name):
-  st.subheader("🗺️ Your Detailed Preparation Roadmap")
+  if not data:
+    st.warning("No roadmap data available. Please regenerate.")
+    return
 
-  st.info(data.get("summary", ""))
+  st.subheader("🗺️ Your Detailed AI Preparation Roadmap")
+
+  # Only render st.info if the summary actually contains text
+  summary = data.get("summary") or data.get("strategy_title")
+  if summary:
+    st.info(summary)
 
   if data.get("assumptions"):
     with st.expander("Notes & Verification"):
       for item in data["assumptions"]:
         st.write("• " + item)
 
-  # Render Day-by-Day Schedule as a Table
-  schedule = data.get("day_by_day_schedule", [])
+  # Render schedule table
+  schedule = data.get("schedule") or data.get("day_by_day_schedule")
   if schedule:
-    st.subheader("📅 Day-by-Day Detailed Schedule")
+    st.subheader("📅 Detailed Schedule")
     st.table(schedule)
+  else:
+    st.warning(
+        "Schedule items could not be loaded. Try regenerating the roadmap."
+    )
 
-  if data.get("final_week"):
-    st.subheader("🔥 Final Week Plan")
-    for item in data["final_week"]:
-      st.write("• " + item)
-
-  if data.get("exam_day"):
-    st.subheader("🎯 Exam-Day Strategy")
-    for item in data["exam_day"]:
+  if data.get("final_week") or data.get("final_execution_rules"):
+    st.subheader("🔥 Final Strategy")
+    rules = data.get("final_week") or data.get("final_execution_rules")
+    for item in rules:
       st.write("• " + item)
 
   # Download PDF Section
@@ -339,7 +346,6 @@ def show_roadmap(data, exam_name):
     )
   except Exception as e:
     st.error(f"Could not generate PDF download: {e}")
-
 
 # ============================================================
 # QUIZ ENGINE
