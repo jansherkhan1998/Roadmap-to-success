@@ -1,7 +1,12 @@
 from datetime import date
+import io
 import json
 import os
 from google import genai
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Spacer
 import streamlit as st
 
 # ============================================================
@@ -103,12 +108,10 @@ Daily Available Study Hours: {hours_per_day}
 CRITICAL ACCURACY REQUIREMENT:
 You MUST strictly adhere to the exact official paper pattern provided above (e.g., if MDCAT, use exactly 180 MCQs total with 81 Bio, 45 Chem, 36 Physics, 9 English, 9 Logical Reasoning; if NUST NET, use 200 MCQs). Do NOT cite outdated patterns like 200 MCQs for MDCAT.
 
-The student is preparing in Pakistan. Tailor the roadmap to commonly relevant Pakistani education and entrance-test patterns, including PMDC/medical tests, NUMS, HEC-related aptitude patterns, provincial boards, FSc/A-Level preparation, engineering entrance tests, and computer-based testing.
-
 Include:
 1. Executive summary
 2. Official Exam structure & Exact Section Distribution (Specify total MCQs, timings, and marking criteria)
-3. High-yield subjects and topics in a structured table
+3. High-yield subjects and topics
 4. Phase-wise plan:
    - Phase 1: Syllabus Coverage / Concept Building
    - Phase 2: Revision / Weak Area Improvement
@@ -119,19 +122,15 @@ Include:
 8. Time-management strategy
 9. Negative-marking strategy (only where applicable)
 10. Computer-based-test strategy where relevant
-11. Weekly performance tracking table
+11. Weekly performance tracking framework
 12. Final 7-day strategy
 13. Exam-day strategy
 14. Top 10 personalized priorities
 15. Five common mistakes to avoid
 16. Five measurable preparation targets
 
-Make the workload realistic. Adapt the balance according to level:
-Beginner = more concepts,
-Intermediate = balanced concepts/revision/practice,
-Advanced = more testing, speed, revision, and weak-area correction.
-
-Use clear Markdown, headings, tables, and bullet points. Avoid vague advice.
+Make the workload realistic. Adapt the balance according to level.
+Use clear Markdown, headings, and bullet points. Avoid vague advice.
 Today's date is {date.today()}.
 """
 
@@ -158,6 +157,126 @@ Return ONLY valid JSON with this exact structure:
   ]
 }}
 """
+
+
+# ============================================================
+# PDF GENERATOR (REPORTLAB)
+# ============================================================
+
+
+def generate_pdf_from_text(test_name, exam_date, roadmap_text):
+  """Converts Markdown text into a clean PDF document using ReportLab."""
+  buffer = io.BytesIO()
+  doc = SimpleDocTemplate(
+      buffer,
+      pagesize=letter,
+      rightMargin=36,
+      leftMargin=36,
+      topMargin=36,
+      bottomMargin=36,
+  )
+
+  styles = getSampleStyleSheet()
+
+  # Custom Typography Styles
+  title_style = ParagraphStyle(
+      "DocTitle",
+      parent=styles["Heading1"],
+      fontSize=18,
+      leading=22,
+      textColor=colors.HexColor("#1E3A8A"),
+      spaceAfter=6,
+  )
+  subtitle_style = ParagraphStyle(
+      "DocSubTitle",
+      parent=styles["Normal"],
+      fontSize=10,
+      leading=14,
+      textColor=colors.HexColor("#4B5563"),
+      spaceAfter=12,
+  )
+  h1_style = ParagraphStyle(
+      "H1",
+      parent=styles["Heading2"],
+      fontSize=13,
+      leading=17,
+      textColor=colors.HexColor("#1E40AF"),
+      spaceBefore=12,
+      spaceAfter=6,
+  )
+  h2_style = ParagraphStyle(
+      "H2",
+      parent=styles["Heading3"],
+      fontSize=11,
+      leading=15,
+      textColor=colors.HexColor("#1F2937"),
+      spaceBefore=10,
+      spaceAfter=4,
+  )
+  body_style = ParagraphStyle(
+      "Body",
+      parent=styles["BodyText"],
+      fontSize=9,
+      leading=13,
+      textColor=colors.HexColor("#374151"),
+      spaceAfter=4,
+  )
+  bullet_style = ParagraphStyle(
+      "Bullet",
+      parent=body_style,
+      leftIndent=15,
+      firstLineIndent=-10,
+      spaceAfter=3,
+  )
+
+  story = []
+
+  # Header Block
+  story.append(Paragraph("AI Entrance Test Preparation Roadmap", title_style))
+  story.append(
+      Paragraph(
+          f"<b>Target Test:</b> {test_name} &nbsp;|&nbsp; <b>Exam Date:</b>"
+          f" {exam_date}",
+          subtitle_style,
+      )
+  )
+  story.append(
+      HRFlowable(
+          width="100%",
+          thickness=1,
+          color=colors.HexColor("#CBD5E1"),
+          spaceAfter=10,
+      )
+  )
+
+  # Parse Markdown text into ReportLab Flowables
+  lines = roadmap_text.split("\n")
+  for line in lines:
+    clean = line.strip()
+    if not clean:
+      story.append(Spacer(1, 4))
+      continue
+
+    # Escape XML characters for ReportLab compatibility
+    clean_text = (
+        clean.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    )
+
+    # Format Markdown Headers and Lists
+    if clean_text.startswith("# "):
+      story.append(Paragraph(clean_text[2:], title_style))
+    elif clean_text.startswith("## "):
+      story.append(Paragraph(clean_text[3:], h1_style))
+    elif clean_text.startswith("### "):
+      story.append(Paragraph(clean_text[4:], h2_style))
+    elif clean_text.startswith("- ") or clean_text.startswith("* "):
+      story.append(Paragraph(f"• {clean_text[2:]}", bullet_style))
+    else:
+      story.append(Paragraph(clean_text, body_style))
+
+  doc.build(story)
+  buffer.seek(0)
+  return buffer.getvalue()
 
 
 # ============================================================
@@ -315,38 +434,23 @@ if "roadmap" in st.session_state:
     st.divider()
     st.subheader("📥 Download Roadmap")
 
-    markdown_data = (
-        "# AI Entrance Test Preparation Roadmap\n\n"
-        f"**Test:** {st.session_state['test']}\n\n"
-        f"**Exam Date:** {st.session_state['exam_date']}\n\n"
-        "---\n\n" + st.session_state["roadmap"]
-    )
+    try:
+      pdf_bytes = generate_pdf_from_text(
+          st.session_state["test"],
+          st.session_state["exam_date"],
+          st.session_state["roadmap"],
+      )
 
-    text_data = (
-        "AI Entrance Test Preparation Roadmap\n"
-        "=====================================\n\n"
-        f"Test: {st.session_state['test']}\n"
-        f"Exam Date: {st.session_state['exam_date']}\n\n"
-        + st.session_state["roadmap"]
-    )
-
-    col1, col2 = st.columns(2)
-    with col1:
       st.download_button(
-          "📄 Download Markdown",
-          markdown_data,
-          "entrance_test_roadmap.md",
-          "text/markdown",
+          "📄 Download Complete PDF Roadmap",
+          pdf_bytes,
+          file_name=f"{st.session_state['test'].replace(' ', '_')}_Roadmap.pdf",
+          mime="application/pdf",
+          type="primary",
           use_container_width=True,
       )
-    with col2:
-      st.download_button(
-          "📝 Download Text",
-          text_data,
-          "entrance_test_roadmap.txt",
-          "text/plain",
-          use_container_width=True,
-      )
+    except Exception as pdf_err:
+      st.error(f"Failed to compile PDF: {pdf_err}")
 
   with tab2:
     st.subheader("🎯 Phase-Based Practice Quiz")
