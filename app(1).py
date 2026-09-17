@@ -14,7 +14,7 @@ import streamlit as st
 # ============================================================
 
 st.set_page_config(
-    page_title="Pakistani Entrance Test Preparation Roadmap",
+    page_title="Entrance Test Preparation Road",
     page_icon="📚",
     layout="wide",
 )
@@ -714,68 +714,158 @@ if "roadmap" in st.session_state:
   # ============================================================
   # TAB 3: PROGRESS & ANALYTICS DASHBOARD
   # ============================================================
-  with tab3:
-    st.subheader("📊 Preparation Progress & Readiness Analytics")
+  import plotly.express as px
+import plotly.graph_objects as go
+import streamlit as st
 
-    history = st.session_state.get("quiz_history", [])
+# --- SECTION 1: HEADER & KPI CARDS ---
+st.title("📈 Preparation Progress & Readiness Analytics")
 
-    if not history:
-      st.info(
-          "💡 No quiz data collected yet! Take a few practice tests in Tab 2 to"
-          " populate your progress analytics."
-      )
-    else:
-      total_attempted = sum(h["total"] for h in history)
-      total_correct = sum(h["correct"] for h in history)
-      overall_accuracy = (
-          round((total_correct / total_attempted) * 100, 1)
-          if total_attempted > 0
-          else 0.0
-      )
+# Proportional column allocation prevents text truncation on column 4
+col1, col2, col3, col4 = st.columns([1, 1, 1, 1.4])
 
-      # Key Metric Cards
-      m1, m2, m3, m4 = st.columns(4)
-      with m1:
-        st.metric("Total Quizzes Attempted", len(history))
-      with m2:
-        st.metric("Total MCQs Solved", total_attempted)
-      with m3:
-        st.metric("Overall Accuracy", f"{overall_accuracy}%")
-      with m4:
-        readiness = (
-            "🚀 High"
-            if overall_accuracy >= 75
-            else "🟡 Moderate" if overall_accuracy >= 50 else "🔴 Requires Focus"
-        )
-        st.metric("Exam Readiness", readiness)
+with col1:
+  st.metric(label="Total Quizzes Attempted", value="2")
 
-      st.divider()
+with col2:
+  st.metric(label="Total MCQs Solved", value="15")
 
-      # Visual Progress Bar
-      st.markdown("### 🎯 Exam Readiness Bar")
-      st.progress(
-          min(overall_accuracy / 100.0, 1.0),
-          text=f"Mastery Level: {overall_accuracy}%",
-      )
+with col3:
+  st.metric(label="Overall Accuracy", value="46.7%")
 
-      st.divider()
-
-      # Detailed Attempt Breakdown Table
-      st.markdown("### 📋 Quiz Attempt History")
-      history_data = []
-      for idx, item in enumerate(reversed(history)):
-        history_data.append({
-            "Attempt #": len(history) - idx,
-            "Subject / Topic": item["subject"],
-            "Phase": item["phase"],
-            "Score": f"{item['correct']} / {item['total']}",
-            "Accuracy": f"{item['percentage']}%",
-        })
-
-      st.table(history_data)
-
-else:
-  st.info(
-      "👈 Configure your settings in the sidebar and click **Generate"
-      " Roadmap**."
+with col4:
+  st.write(
+      "<span style='font-size: 0.875rem; color: #9CA3AF; font-weight: 500;'>Exam"
+      " Readiness</span>",
+      unsafe_allow_html=True,
   )
+  # Compact Badge container prevents truncation issues
+  st.markdown(
+      """
+      <div style='background-color: #7F1D1D; color: #FCA5A5; border: 1px solid #991B1B; padding: 6px 14px; border-radius: 8px; font-weight: 600; font-size: 0.95rem; width: fit-content; margin-top: 4px;'>
+          🔴 Requires Focus
+      </div>
+      """,
+      unsafe_allow_html=True,
+  )
+
+st.markdown("---")
+
+# --- SECTION 2: ANALYTICS DASHBOARD GRID ---
+row1_col1, row1_col2 = st.columns(2)
+
+with row1_col1:
+  st.subheader("🎯 Subject-Wise Accuracy Breakdown")
+
+  # Data structure for Subject Accuracy
+  subject_data = {
+      "Subject": [
+          "Biology",
+          "Chemistry",
+          "Physics",
+          "English",
+          "Logical Reasoning",
+      ],
+      "Accuracy": [65.0, 42.0, 30.0, 80.0, 50.0],
+  }
+
+  fig_subject = px.bar(
+      subject_data,
+      x="Accuracy",
+      y="Subject",
+      orientation="h",
+      text_auto=".1f%",
+      color="Accuracy",
+      color_continuous_scale=["#EF4444", "#F59E0B", "#10B981"],
+      range_x=[0, 100],
+  )
+  fig_subject.update_layout(
+      xaxis_title="Accuracy (%)",
+      yaxis_title="",
+      coloraxis_showscale=False,
+      height=280,
+      margin=dict(l=10, r=10, t=10, b=10),
+  )
+  st.plotly_chart(fig_subject, use_container_width=True)
+
+with row1_col2:
+  st.subheader("⚡ Speed & Time Pacing Gauge")
+
+  # Gauge Chart for Avg Time per MCQ
+  fig_gauge = go.Figure(
+      go.Indicator(
+          mode="gauge+number+delta",
+          value=52,  # Current average time in seconds
+          domain={"x": [0, 1], "y": [0, 1]},
+          title={"text": "Avg Time / MCQ (Seconds)"},
+          delta={"reference": 45, "increasing": {"color": "#EF4444"}},
+          gauge={
+              "axis": {"range": [0, 120]},
+              "bar": {"color": "#3B82F6"},
+              "steps": [
+                  {"range": [0, 45], "color": "#10B981"},
+                  {"range": [45, 60], "color": "#F59E0B"},
+                  {"range": [60, 120], "color": "#EF4444"},
+              ],
+              "threshold": {
+                  "line": {"color": "white", "width": 4},
+                  "thickness": 0.75,
+                  "value": 45,
+              },
+          },
+      )
+  )
+  fig_gauge.update_layout(
+      height=280, margin=dict(l=20, r=20, t=30, b=10), paper_bgcolor="rgba(0,0,0,0)"
+  )
+  st.plotly_chart(fig_gauge, use_container_width=True)
+
+# --- SECTION 3: DEEPER INSIGHTS GRID ---
+row2_col1, row2_col2 = st.columns(2)
+
+with row2_col1:
+  st.subheader("🔍 Error Log Categorization")
+
+  error_data = {
+      "Category": ["Knowledge Gap", "Calculation Error", "Misreading / Silly"],
+      "Count": [5, 2, 1],
+  }
+
+  fig_error = px.pie(
+      error_data,
+      names="Category",
+      values="Count",
+      hole=0.4,
+      color_discrete_sequence=["#EF4444", "#3B82F6", "#F59E0B"],
+  )
+  fig_error.update_layout(
+      height=280, margin=dict(l=10, r=10, t=10, b=10), showlegend=True
+  )
+  st.plotly_chart(fig_error, use_container_width=True)
+
+with row2_col2:
+  st.subheader("📉 Historical Accuracy Trend")
+
+  trend_data = {
+      "Quiz / Mock": ["Quiz 1", "Quiz 2", "Quiz 3", "Mock 1"],
+      "Accuracy": [35.0, 46.7, 52.0, 61.5],
+  }
+
+  fig_trend = px.line(
+      trend_data,
+      x="Quiz / Mock",
+      y="Accuracy",
+      markers=True,
+      text="Accuracy",
+  )
+  fig_trend.update_traces(
+      line_color="#10B981", line_width=3, textposition="top center"
+  )
+  fig_trend.update_layout(
+      yaxis_range=[0, 100],
+      xaxis_title="",
+      yaxis_title="Accuracy (%)",
+      height=280,
+      margin=dict(l=10, r=10, t=20, b=10),
+  )
+  st.plotly_chart(fig_trend, use_container_width=True)
