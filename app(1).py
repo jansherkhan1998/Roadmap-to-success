@@ -19,10 +19,10 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("📚 AI Entrance Test Preparation Roadmap")
+st.title("📚 Entrance Test Preparation Road")
 st.write(
-    "Generate a personalized preparation roadmap and continuous practice"
-    " test suites for Pakistani entrance tests."
+    "Generate a personalized preparation roadmap, continuous practice"
+    " suites, and track your overall readiness for Pakistani entrance tests."
 )
 
 # ============================================================
@@ -383,6 +383,7 @@ if generate_button:
     st.session_state["test"] = selected_test
     st.session_state["exam_date"] = target_date.strftime("%d %B %Y")
     st.session_state["phase_mcqs"] = []  # Clear previous quiz pool
+    st.session_state["quiz_history"] = []  # Reset analytics history
 
   except Exception as error:
     st.error(f"❌ Unable to generate the roadmap: {error}")
@@ -397,7 +398,11 @@ if "roadmap" in st.session_state:
       f" {st.session_state['exam_date']}"
   )
 
-  tab1, tab2 = st.tabs(["🗺️ Preparation Roadmap", "📝 Practice Quiz Suite"])
+  tab1, tab2, tab3 = st.tabs([
+      "🗺️ Preparation Roadmap",
+      "📝 Practice Quiz Suite",
+      "📈 Progress & Analytics",
+  ])
 
   with tab1:
     st.markdown(st.session_state["roadmap"])
@@ -490,7 +495,11 @@ if "roadmap" in st.session_state:
             if "phase_mcqs" not in st.session_state:
               st.session_state["phase_mcqs"] = []
 
-            # Append new questions into session pool
+            # Attach metadata to questions
+            for q in new_questions:
+              q["phase"] = selected_phase
+              q["subject"] = quiz_subject
+
             st.session_state["phase_mcqs"].extend(new_questions)
             st.success(
                 f"Added {len(new_questions)} MCQs to pool! Total pool size:"
@@ -546,6 +555,86 @@ if "roadmap" in st.session_state:
         st.info(
             f"**Final Score:** {score} / {len(questions)} ({percentage}%)"
         )
+
+        # Save result attempt to global session state analytics
+        if "quiz_history" not in st.session_state:
+          st.session_state["quiz_history"] = []
+
+        st.session_state["quiz_history"].append({
+            "subject": (
+                questions[0].get("subject", "General") if questions else "General"
+            ),
+            "phase": (
+                questions[0].get("phase", "Phase 1") if questions else "Phase 1"
+            ),
+            "total": len(questions),
+            "correct": score,
+            "percentage": percentage,
+        })
+
+  # ============================================================
+  # TAB 3: PROGRESS & ANALYTICS DASHBOARD
+  # ============================================================
+  with tab3:
+    st.subheader("📊 Preparation Progress & Readiness Analytics")
+
+    history = st.session_state.get("quiz_history", [])
+
+    if not history:
+      st.info(
+          "💡 No quiz data collected yet! Take a few practice tests in Tab 2 to"
+          " populate your progress analytics."
+      )
+    else:
+      total_attempted = sum(h["total"] for h in history)
+      total_correct = sum(h["correct"] for h in history)
+      overall_accuracy = (
+          round((total_correct / total_attempted) * 100, 1)
+          if total_attempted > 0
+          else 0.0
+      )
+
+      # Key Metric Cards
+      m1, m2, m3, m4 = st.columns(4)
+      with m1:
+        st.metric("Total Quizzes Attempted", len(history))
+      with m2:
+        st.metric("Total MCQs Solved", total_attempted)
+      with m3:
+        st.metric("Overall Accuracy", f"{overall_accuracy}%")
+      with m4:
+        readiness = (
+            "🚀 High"
+            if overall_accuracy >= 75
+            else "🟡 Moderate" if overall_accuracy >= 50 else "🔴 Requires Focus"
+        )
+        st.metric("Exam Readiness", readiness)
+
+      st.divider()
+
+      # Visual Progress Bar
+      st.markdown("### 🎯 Exam Readiness Bar")
+      st.progress(
+          min(overall_accuracy / 100.0, 1.0),
+          text=f"Mastery Level: {overall_accuracy}%",
+      )
+
+      st.divider()
+
+      # Detailed Attempt Breakdown Table
+      st.markdown("### 📋 Quiz Attempt History")
+      history_data = []
+      for idx, item in enumerate(reversed(history)):
+        history_data.append({
+            "Attempt #": len(history) - idx,
+            "Subject / Topic": item["subject"],
+            "Phase": item["phase"],
+            "Score": f"{item['correct']} / {item['total']}",
+            "Accuracy": f"{item['percentage']}%",
+        })
+
+      st.table(history_data)
+
 else:
   st.info(
       "👈 Configure your settings in the sidebar and click **Generate"
