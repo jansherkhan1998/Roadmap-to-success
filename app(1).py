@@ -400,7 +400,7 @@ def generate_pdf_from_text(test_name, exam_date, roadmap_text):
   doc.build(story)
   buffer.seek(0)
   return buffer.getvalue()
-
+    
 
 # ============================================================
 # SIDEBAR CONFIGURATION
