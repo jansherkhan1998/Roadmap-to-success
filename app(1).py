@@ -186,77 +186,62 @@ def generate_roadmap_pdf(data, exam_name):
 def roadmap_prompt(exam, exam_date, level, hours, focus):
   days = max(1, (exam_date - date.today()).days)
 
+  # Dynamic prompt handling based on timeframe
+  if days > 60:
+    schedule_instruction = f"""
+        Since the duration is long ({days} days), group the plan into 25 to 30 WEEKLY BLOCKS (e.g., Week 1, Week 2, ..., Week 30).
+        For each week, define the exact FSc/A-Level chapters, resource materials, and targets.
+        """
+    row_label = "Week #"
+  else:
+    schedule_instruction = f"""
+        Provide a granular DAY-BY-DAY schedule covering all {days} days.
+        """
+    row_label = "Day #"
+
   return f"""
-You are an elite, high-stakes Academic Strategist for Pakistani Competitive Exams ({exam}). 
-The student wants to score maximum/perfect marks in {days} days.
+You are a Principal Academic Strategist for Pakistani Entrance Exams ({exam}).
 
-Create an INTENSE, non-casual, highly motivating, and granular 90-day execution roadmap.
+Create an intense, actionable, non-casual preparation plan targeting maximum marks.
 
-STUDENT PROFILE:
-- Target Exam: {exam}
-- Time Horizon: {days} Days
-- Starting Level: {level}
-- Daily Commitment: {hours} Hours/day
-- Focus Area: {focus or "Overall High-Yield Mastery"}
+TIME HORIZON: {days} Days ({exam_date})
+LEVEL: {level}
+DAILY HOURS: {hours} Hours/day
+FOCUS AREA: {focus or "Overall Syllabus"}
 
-CORE DIRECTIVES FOR THE ROADMAP:
-1. Divide the {days} days into 3 distinct gamified phases:
-   - Phase 1: Foundation & Chapter Crucible (Days 1 to 45) -> Deep FSc/A-Level textbook coverage.
-   - Phase 2: High-Speed Practice & Topic Blitz (Days 46 to 75) -> Past papers, numerical tricks, and error logging.
-   - Phase 3: Simulated Exam Execution & Revision (Days 76 to {days}) -> Full-length mock tests and rapid review.
-2. Provide a sample WEEK-BY-WEEK and DAY-BY-DAY schedule table. Every day MUST specify:
-   - Specific FSc/A-Level Chapter names (e.g., "Physics: Work & Energy", "Biology: Biological Molecules").
-   - Concrete daily goals (e.g., "Solve 80 MCQs under timed conditions", "Memorize 15 organic reaction mechanisms").
-   - Daily morning vs. evening time allocation.
+CRITICAL FORMAT INSTRUCTION:
+{schedule_instruction}
 
-Return ONLY valid JSON with this exact schema:
+Return ONLY valid JSON matching this structure:
 
 {{
     "strategy_title": "Game Plan Title",
-    "target_score_mentality": "Executive strategy statement to hit top marks",
+    "target_score_mentality": "Strategic mindset to score top marks",
     "phases": [
         {{
             "phase_name": "Phase 1: Foundation Crucible",
-            "duration": "Days 1-45",
-            "primary_goal": "Goal description",
+            "duration": "Weeks 1-6",
+            "primary_goal": "Cover core textbook theory",
             "daily_target_mcqs": 60
-        }},
-        {{
-            "phase_name": "Phase 2: Speed & MCQ Mastery",
-            "duration": "Days 46-75",
-            "primary_goal": "Goal description",
-            "daily_target_mcqs": 100
-        }},
-        {{
-            "phase_name": "Phase 3: Full Mock Execution",
-            "duration": "Days 76-90",
-            "primary_goal": "Goal description",
-            "daily_target_mcqs": 180
         }}
     ],
-    "day_by_day_schedule": [
+    "schedule": [
         {{
-            "day_number": 1,
+            "time_block": "Week 1 (Days 1-7)",
             "phase": "Phase 1",
-            "subject": "Biology & Physics",
-            "topics": "Bio: Cell Structure & Function | Phys: Scalars & Vectors",
-            "morning_session": "Read textbook chapters thoroughly & annotate key terms (2.5 hrs)",
-            "evening_session": "Solve 50 topic-wise MCQs & update Error Log (1.5 hrs)",
-            "daily_mcq_target": 50,
-            "hours": {hours}
+            "subject": "Biology & Chemistry",
+            "chapters": "Bio: Cell Biology | Chem: Stoichiometry",
+            "study_tasks": "Read FSc Book 1 Ch 1 & 2; Draw cell diagrams",
+            "recommended_resource": "Punjab / KPK Textbook Board & KIPS Series",
+            "practice_target": "Solve 80 topic-wise MCQs",
+            "yield_priority": "High-Yield",
+            "weekly_hours": {hours * 7}
         }}
     ],
-    "error_log_protocol": [
-        "Rule 1 for tracking wrong answers",
-        "Rule 2 for spaced repetition"
-    ],
-    "final_week_rules": [
-        "Rule 1 for mock exams",
-        "Rule 2 for stress management"
-    ]
+    "error_log_protocol": ["Rule 1", "Rule 2"],
+    "final_execution_rules": ["Rule 1", "Rule 2"]
 }}
 """
-
 # ============================================================
 # MCQ PROMPT
 # ============================================================
@@ -297,7 +282,7 @@ Return ONLY valid JSON:
 
 
 def show_roadmap(data, exam_name):
-  st.subheader("🗺️ Your Detailed AI Preparation Roadmap")
+  st.subheader("🗺️ Your Detailed Preparation Roadmap")
 
   st.info(data.get("summary", ""))
 
