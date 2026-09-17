@@ -201,64 +201,35 @@ def generate_roadmap_pdf(data, exam_name):
 # ============================================================
 
 
+from datetime import date
+
+
 def roadmap_prompt(exam, exam_date, level, hours, focus):
   days = max(1, (exam_date - date.today()).days)
   weeks = max(1, days // 7)
 
-  # 1. Dynamic Granularity Rule to prevent Token Errors
-  if weeks > 16:
-    structure_type = "Macro-Phases (Block of Weeks)"
-    granularity_instruction = f"""
-        Given the long preparation window ({days} days / {weeks} weeks), group the output into 4-6 MACRO PHASES.
-        Do NOT write individual days. Write structured blocks (e.g. Phase 1: Weeks 1-6, Phase 2: Weeks 7-12...).
-        """
-  elif weeks > 4:
-    structure_type = "Weekly Schedule"
-    granularity_instruction = f"""
-        Group the schedule into WEEKLY blocks ({weeks} Weeks total).
-        For each week, specify exact chapter targets and MCQ quotas.
-        """
-  else:
-    structure_type = "Daily Schedule"
-    granularity_instruction = (
-        f"Provide a granular DAY-BY-DAY schedule covering all {days} days."
-    )
-
+  # Prompt with clean strings and escaped quotes
   return f"""
-#def roadmap_prompt(exam, exam_date, level, hours, focus):
-  days = max(1, (exam_date - date.today()).days)
-  weeks = max(1, days // 7)
+You are the Chief Academic Strategist for Pakistani Entrance Exams ({exam}).
 
-  return f"""
-You are an Experienced Chief Academic Strategist for Pakistani  Competitive & University Entrance test Exams ({exam}).
-
-STUDENT & EXAM SPECIFICATIONS:
-- Target Test: {exam}
-- Target Date: {exam_date.isoformat()} ({days} days / {weeks} weeks remaining)
-- Starting Level: {level}
-- Commitment: {hours} hours/day
-- Focus Area: {focus or "Full Syllabus High-Yield Coverage"}
-
-TEST-SPECIFIC SYLLABUS DIRECTIVES:
-- If MDCAT: Prioritize Biology (81 MCQs), Chemistry (45 MCQs), Physics (36 MCQs), English & Logical Reasoning.
-- If ECAT/UET: Prioritize Math (30 MCQs), Physics (30 MCQs), Chemistry/CS (30 MCQs), English (10 MCQs).
-#- If NUST NET: Focus on Math (50%), Physics (30%), English (20%) time-management (~50s per MCQ).
-- If NTS NAT/GAT/FAST: Heavy focus on Analytical Reasoning, Quantitative, Verbal, and IQ.
+Target Exam: {exam}
+Timeframe: {days} Days ({weeks} Weeks)
+Level: {level} | Hours/Day: {hours} | Focus: {focus or "Full Syllabus High-Yield"}
 
 INSTRUCTION FOR HIGH DETAIL:
-For EVERY chapter listed, you MUST break it down into explicit SUBTOPICS and core CONCEPTS required by the official syllabus (PMDC / UET / NUST). 
+For EVERY chapter listed, you MUST break it down into explicit SUBTOPICS and core CONCEPTS required by the official syllabus (PMDC / UET / NUST).
 
-Example for "Cell Biology":
-- Subtopics: Fluid Mosaic Model, Endomembrane System (Rough/Smooth ER, Golgi, Lysosomes), Organelle Autophagy, Mitochondria Cristae & mtDNA, Chromosome Nucleosome packing (Histones H1-H4), Prokaryote (70S) vs Eukaryote (80S) Ribosomes.
+Example breakdown for Cell Biology:
+- Subtopics: Fluid Mosaic Model, Endomembrane System, Organelle Autophagy, Mitochondria Cristae, Chromosome Nucleosome packing, Prokaryote vs Eukaryote Ribosomes.
 
-Return ONLY valid JSON with this schema:
+Return ONLY valid JSON matching this exact structure:
 {{
     "strategy_title": "Granular Syllabus Roadmap for {exam}",
     "schedule": [
         {{
             "time_block": "Week 1 (Days 1-7)",
             "subject_focus": "Biology & Chemistry",
-            "chapters_to_cover": "Bio: Cell Biology | Chem: Basic Concepts & Stoichiometry",
+            "chapters_to_cover": "Bio: Cell Biology | Chem: Basic Concepts",
             "recommended_books": "Punjab/KPK Textbook Board & KIPS Series",
             "action_tasks": "Read textbook lines, annotate organelle functions, solve 80 MCQs/day",
             "practice_target": "500 MCQs",
@@ -266,16 +237,16 @@ Return ONLY valid JSON with this schema:
                 {{
                     "chapter": "Cell Biology",
                     "subtopics": [
-                        "Plasma Membrane: Fluid Mosaic Model, Phospholipid bilayer fluidity & transport mechanisms",
-                        "Organelles: Endoplasmic Reticulum, Golgi apparatus sorting, Lysosomal acidic pH (~5) & storage diseases",
-                        "Energy Transducers: Mitochondria cristae & chloroplast thylakoid structures",
-                        "Nucleus & Chromosomes: Histone octamers, nucleosome folding, and 70S vs 80S ribosome comparison"
+                        "Plasma Membrane: Fluid Mosaic Model, Phospholipid bilayer fluidity and transport mechanisms",
+                        "Organelles: Endoplasmic Reticulum, Golgi apparatus sorting, Lysosomal acidic pH and storage diseases",
+                        "Energy Transducers: Mitochondria cristae and chloroplast thylakoid structures",
+                        "Nucleus and Chromosomes: Histone octamers, nucleosome folding, and 70S vs 80S ribosome comparison"
                     ]
                 }},
                 {{
-                    "chapter": "Basic Concepts & Stoichiometry",
+                    "chapter": "Basic Concepts and Stoichiometry",
                     "subtopics": [
-                        "Mole concept, Avogadro's number calculations, and molar volume of gases at STP",
+                        "Mole concept, Avogadros number calculations, and molar volume of gases at STP",
                         "Empirical vs Molecular formula derivations",
                         "Limiting Reactants identification and percentage yield calculations"
                     ]
@@ -287,7 +258,6 @@ Return ONLY valid JSON with this schema:
     "test_day_strategy": ["Tip 1", "Tip 2"]
 }}
 """
-
 # ============================================================
 # MCQ PROMPT
 # ============================================================
