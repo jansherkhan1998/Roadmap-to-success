@@ -1,5 +1,5 @@
 streamlit
-fpdf
+fpdf2
 google-genai
 pandas
 json-repair
