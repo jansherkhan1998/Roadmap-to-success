@@ -67,8 +67,11 @@ def get_api_key():
 def get_client(api_key):
   return genai.Client(api_key=api_key)
 
+import time
+from google.genai.errors import APIError
 
-def ask_gemini(prompt, json_mode=False):
+
+def ask_gemini(prompt, json_mode=False, max_retries=5):
   api_key = get_api_key()
 
   if not api_key:
@@ -79,15 +82,26 @@ def ask_gemini(prompt, json_mode=False):
   client = get_client(api_key)
 
   config = types.GenerateContentConfig(
-      temperature=0.7,
+      temperature=0.3,
+      max_output_tokens=8192,  # Ensures long structured outputs fit
       response_mime_type="application/json" if json_mode else "text/plain",
   )
 
-  response = client.models.generate_content(
-      model="gemini-3.6-flash", contents=prompt, config=config
-  )
+  # Automatic retry logic for temporary server-side spikes (503/429 errors)
+  for attempt in range(max_retries):
+    try:
+      response = client.models.generate_content(
+          model="gemini-2.5-flash", contents=prompt, config=config
+      )
+      return response.text
 
-  return response.text
+    except APIError as e:
+      # If it's a 503 (Overloaded) or 429 (Rate Limit) error, retry automatically
+      if ("503" in str(e) or "429" in str(e)) and attempt < max_retries - 1:
+        wait_time = (2**attempt) + 1  # Waits 2s, 3s, 5s, 9s...
+        time.sleep(wait_time)
+      else:
+        raise e  # If retries run out or it's a different error, raise it
 
 
 # ============================================================
