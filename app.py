@@ -19,7 +19,7 @@ from reportlab.platypus import (
 import streamlit as st
 
 # Default Groq model (Llama 3.3 70B Versatile is recommended for fast, high-quality reasoning)
-DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
+DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b"
 
 # ============================================================
 # SECTION 1: STREAMLIT PAGE CONFIGURATION
