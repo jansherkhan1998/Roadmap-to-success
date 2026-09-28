@@ -4,7 +4,7 @@ import json
 import os
 import re
 
-from google import genai
+from groq import Groq
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -17,6 +17,9 @@ from reportlab.platypus import (
     TableStyle,
 )
 import streamlit as st
+
+# Default Groq model (Llama 3.3 70B Versatile is recommended for fast, high-quality reasoning)
+DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
 
 # ============================================================
 # SECTION 1: STREAMLIT PAGE CONFIGURATION
@@ -39,15 +42,15 @@ st.write(
 # ============================================================
 
 
-def get_gemini_api_key():
+def get_groq_api_key():
     """Retrieve API key strictly from Streamlit secrets or environment variables."""
     try:
-        if "GEMINI_API_KEY" in st.secrets:
-            return st.secrets["GEMINI_API_KEY"]
+        if "GROQ_API_KEY" in st.secrets:
+            return st.secrets["GROQ_API_KEY"]
     except Exception:
         pass
 
-    return os.getenv("GEMINI_API_KEY", "")
+    return os.getenv("GROQ_API_KEY", "")
 
 
 def get_test_pattern_info(test_name):
@@ -99,7 +102,7 @@ def get_test_pattern_info(test_name):
 
 
 # ============================================================
-# SECTION 3: GEMINI PROMPT GENERATORS
+# SECTION 3: GROQ PROMPT GENERATORS
 # ============================================================
 
 
@@ -162,7 +165,7 @@ Requirements:
 2. Exactly 4 clear options per MCQ (A, B, C, D).
 3. Clear explanations for the correct options.
 
-Return ONLY valid JSON with this exact structure:
+Return ONLY valid JSON wrapped in no extra text or markdown formatting:
 {{
   "questions": [
     {{
@@ -389,7 +392,7 @@ with st.sidebar:
     target_test = st.selectbox(
         "Target Test",
         [
-            "KMU-CAT",
+            "KMU CAT",
             "MDCAT",
             "ECAT / Engineering Tests",
             "ISSB Initial Computer Test",
@@ -419,14 +422,14 @@ with st.sidebar:
 
     st.divider()
 
-    # Automatically handle secret API key loading
-    auto_key = get_gemini_api_key()
+    # Automatically handle secret API key loading for Groq
+    auto_key = get_groq_api_key()
     if auto_key:
-        st.success("✅ Gemini API Key connected from secrets.")
+        st.success("⚡ Groq API Key connected from secrets.")
     else:
         st.error(
             "⚠️ No API key found in `.streamlit/secrets.toml` under"
-            " `GEMINI_API_KEY`."
+            " `GROQ_API_KEY`."
         )
 
     generate_button = st.button(
@@ -455,14 +458,14 @@ with col3:
     st.metric("Preparation Level", preparation_level)
 
 # ============================================================
-# SECTION 7: ROADMAP GENERATION LOGIC
+# SECTION 7: ROADMAP GENERATION LOGIC (GROQ API CALL)
 # ============================================================
 
 if generate_button:
-    current_key = get_gemini_api_key()
+    current_key = get_groq_api_key()
 
     if not current_key:
-        st.error("❌ No Gemini API key configured in secrets.")
+        st.error("❌ No Groq API key configured in secrets.")
         st.stop()
 
     if target_date <= today:
@@ -474,22 +477,28 @@ if generate_button:
         st.stop()
 
     try:
-        with st.spinner("🤖 Generating your roadmap using Gemini..."):
-            client = genai.Client(api_key=current_key)
-            response = client.models.generate_content(
-                model="gemini-3.6-flash",
-                contents=build_roadmap_prompt(
-                    selected_test,
-                    target_date.strftime("%d %B %Y"),
-                    remaining_days,
-                    preparation_level,
-                    study_hours,
-                ),
+        with st.spinner("⚡ Generating your roadmap using Groq..."):
+            client = Groq(api_key=current_key)
+            completion = client.chat.completions.create(
+                model=DEFAULT_GROQ_MODEL,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": build_roadmap_prompt(
+                            selected_test,
+                            target_date.strftime("%d %B %Y"),
+                            remaining_days,
+                            preparation_level,
+                            study_hours,
+                        ),
+                    }
+                ],
+                temperature=0.6,
             )
-            roadmap = response.text
+            roadmap = completion.choices[0].message.content
 
         if not roadmap:
-            st.error("❌ Gemini returned an empty response.")
+            st.error("❌ Groq returned an empty response.")
             st.stop()
 
         st.session_state["roadmap"] = roadmap
@@ -498,7 +507,7 @@ if generate_button:
         st.session_state["topic_mcqs"] = []
 
     except Exception as error:
-        st.error(f"❌ Unable to generate the roadmap: {error}")
+        st.error(f"❌ Unable to generate the roadmap via Groq: {error}")
 
 # ============================================================
 # SECTION 8: MAIN CONTENT TABS (2 TABS ONLY)
@@ -541,7 +550,7 @@ if "roadmap" in st.session_state:
             st.error(f"Failed to compile PDF: {pdf_err}")
 
     # ------------------------------------------------------------
-    # TAB 2: COMPREHENSIVE TOPIC MCQS
+    # TAB 2: COMPREHENSIVE TOPIC MCQS (GROQ API CALL)
     # ------------------------------------------------------------
     with tab2:
         st.subheader("🎯 Extensive Topic-Wise MCQ Practice")
@@ -583,23 +592,30 @@ if "roadmap" in st.session_state:
             if not quiz_subject.strip():
                 st.error("Please specify a subject or topic to practice.")
             else:
-                current_key = get_gemini_api_key()
+                current_key = get_groq_api_key()
                 try:
                     with st.spinner(
                         f"Generating {mcq_batch_size} practice MCQs for"
-                        f" {quiz_subject}..."
+                        f" {quiz_subject} using Groq..."
                     ):
-                        client = genai.Client(api_key=current_key)
-                        mcq_res = client.models.generate_content(
-                            model="gemini-3.5-flash",
-                            contents=build_mcq_prompt(
-                                st.session_state["test"],
-                                quiz_subject,
-                                mcq_batch_size,
-                            ),
+                        client = Groq(api_key=current_key)
+                        mcq_res = client.chat.completions.create(
+                            model=DEFAULT_GROQ_MODEL,
+                            response_format={"type": "json_object"},
+                            messages=[
+                                {
+                                    "role": "user",
+                                    "content": build_mcq_prompt(
+                                        st.session_state["test"],
+                                        quiz_subject,
+                                        mcq_batch_size,
+                                    ),
+                                }
+                            ],
+                            temperature=0.4,
                         )
 
-                        clean_json = mcq_res.text.strip()
+                        clean_json = mcq_res.choices[0].message.content.strip()
                         if clean_json.startswith("```"):
                             clean_json = clean_json.split("\n", 1)[1].rsplit(
                                 "\n", 1
