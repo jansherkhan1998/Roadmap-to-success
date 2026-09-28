@@ -33,12 +33,12 @@ st.set_page_config(
 
 st.title("📚 Entrance Test Preparation Roadmap & Practice Engine")
 st.write(
-    "Generate a personalized preparation roadmap and practice extensive"
-    " topic-wise MCQs aligned with official Pakistani entrance tests."
+    "Generate a personalized preparation roadmap, attempt scheduled mock"
+    " tests, practice topic-wise MCQs, and track your overall progress."
 )
 
 # ============================================================
-# SECTION 2: HELPER FUNCTIONS & EXAM PATTERNS
+# SECTION 2: HELPER FUNCTIONS & CLEAN PARSING
 # ============================================================
 
 
@@ -54,7 +54,7 @@ def get_groq_api_key():
 
 
 def get_test_pattern_info(test_name):
-    """Returns strict pattern metadata for official Pakistani entrance tests."""
+    """Returns strict pattern metadata for official entrance tests."""
     patterns = {
         "KMU CAT": (
             "100 MCQs total (90 Minutes, No Negative Marking). Breakdown:"
@@ -101,28 +101,53 @@ def get_test_pattern_info(test_name):
     )
 
 
-def extract_topics_from_roadmap(roadmap_text):
-    """Parses subjects and key high-yield topics directly from generated markdown roadmap."""
+def clean_extracted_topic(text):
+    """Removes leftover markdown syntax like **, headers, and metadata tags for clean selectbox labels."""
+    cleaned = re.sub(r"\*\*|\*|#", "", text)
+    cleaned = re.sub(r"Target date:.*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"Days left:.*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"Current level:.*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"Study time per day:.*", "", cleaned, flags=re.IGNORECASE)
+    return cleaned.strip()
+
+
+def extract_clean_topics(roadmap_text):
+    """Extracts high-yield topics clearly from the generated roadmap without unwanted markdown artifacts."""
     topics = []
     lines = roadmap_text.split("\n")
     for line in lines:
         line_clean = line.strip()
-        # Look for headers, bullet points, or list items that mention subjects or topics
+
+        # Skip metadata header lines
+        if any(
+            k in line_clean.lower()
+            for k in ["target date", "days left", "current level", "study time"]
+        ):
+            continue
+
         if line_clean.startswith(("-", "*", "•")) or re.match(
             r"^\d+\.", line_clean
         ):
-            item = re.sub(r"^[\•\*\-\d\.\s]+", "", line_clean).strip()
-            if len(item) > 3 and len(item) < 80 and not item.startswith("Phase"):
+            item = clean_extracted_topic(line_clean)
+            item = re.sub(r"^[\•\*\-\d\.\s]+", "", item).strip()
+            # Split off lengthy hyphenated descriptions
+            if "–" in item:
+                item = item.split("–")[0].strip()
+            elif "-" in item and len(item.split("-")[0].strip()) > 3:
+                item = item.split("-")[0].strip()
+
+            if 3 < len(item) < 60 and not item.lower().startswith("phase"):
                 topics.append(item)
 
-    default_list = [
-        "Biology - General & Applied",
-        "Chemistry - Organic & Inorganic",
-        "Physics - Core Principles",
-        "English - Grammar & Vocabulary",
-        "Logical Reasoning & Analytical",
+    default_topics = [
+        "Biology - Core Concepts",
+        "Chemistry - Reaction Mechanics",
+        "Physics - Principles & Equations",
+        "English - Vocabulary & Grammar",
+        "Logical & Analytical Reasoning",
     ]
-    return list(dict.fromkeys(topics)) if topics else default_list
+    unique_topics = list(dict.fromkeys(topics))
+    return unique_topics if unique_topics else default_topics
 
 
 # ============================================================
@@ -135,7 +160,7 @@ def build_roadmap_prompt(
 ):
     pattern_info = get_test_pattern_info(test_name)
     return f"""
-You are an expert Pakistani entrance-test preparation strategist, academic planner, and curriculum specialist.
+You are an expert entrance-test preparation strategist and curriculum specialist.
 
 Create a practical personalized preparation roadmap for:
 
@@ -146,59 +171,72 @@ Days Remaining: {days_remaining}
 Current Preparation Level: {level}
 Daily Available Study Hours: {hours_per_day}
 
-CRITICAL ACCURACY REQUIREMENT:
-You MUST strictly adhere to the exact official paper pattern provided above.
+CRITICAL REQUIREMENT:
+Adhere strictly to the official paper pattern provided above.
 
 Include:
 1. Executive summary
-2. Official Exam structure & Exact Section Distribution
-3. High-yield subjects and topics (Explicitly list distinct subjects and sub-topics clearly using bullet points)
-4. Phase-wise plan:
-   - Phase 1: Conceptual Foundation
-   - Phase 2: Targeted Revision & Gaps
-   - Phase 3: High-Fidelity Mock Exams
-   - Phase 4: Final Taper & Exam Day Prep
-5. Day-by-day roadmap
-6. Daily study schedule based on {hours_per_day} hours
-7. MCQ and mock-test strategy
-8. Time-management strategy
-9. Negative-marking strategy (only where applicable)
-10. Computer-based-test strategy where relevant
-11. Weekly performance tracking framework
-12. Final 7-day strategy
-13. Exam-day strategy
-14. Top 10 personalized priorities
-15. Five common mistakes to avoid
-16. Five measurable preparation targets
+2. Official Exam structure & Section Weightages
+3. Subject & High-Yield Topic breakdown
+4. Phase-wise roadmap:
+   - Phase 1: Foundation (Test 1 Target)
+   - Phase 2: Intermediate Revision (Test 2 Target)
+   - Phase 3: High-Fidelity Mock Practice (Test 3 Target)
+   - Phase 4: Final Taper & Exam Day Prep (Test 4 Target)
+5. Daily study schedule based on {hours_per_day} hours
+6. Time-management & negative-marking strategies
+7. Top priorities & common mistakes to avoid
 
-Use clear Markdown, headings, and bullet points. Avoid vague advice.
-Today's date is {date.today()}.
+Use clear Markdown with concise section headers. Today's date is {date.today()}.
 """
 
 
-def build_mcq_prompt(test_name, subject, count=10):
+def build_roadmap_mock_prompt(test_name, test_number, count=10):
     pattern_info = get_test_pattern_info(test_name)
     return f"""
-Generate {count} unique, high-yield, exam-standard multiple choice questions (MCQs) for Pakistani entrance test preparation.
+Generate {count} unique multiple choice questions (MCQs) for a full scheduled practice test: "Test {test_number}".
 
 Target Exam: {test_name}
-Official Exam Pattern & Distribution Context: {pattern_info}
-Selected Subject / Topic: {subject}
+Official Exam Pattern: {pattern_info}
 
 STRICT REQUIREMENTS:
-1. Questions MUST strictly follow the exact difficulty, question style, and conceptual depth of {test_name}.
-2. Ensure high-yield topics are prioritized according to the exam pattern (e.g., conceptual questions, formula applications, or logical reasoning as per section weightage).
-3. Exactly 4 distinct options per MCQ (A, B, C, D).
-4. Provide a clear and educational explanation for the correct choice.
+1. Distribute questions proportionally across all official subjects/sections according to test weightage.
+2. Provide exactly 4 options per question (A, B, C, D).
+3. Include clear answer keys and explanations.
 
-Return ONLY valid JSON matching this exact structure (no markdown wrapper or extra text outside JSON):
+Return ONLY valid JSON matching this exact structure:
 {{
+  "test_title": "Test {test_number}",
   "questions": [
     {{
+      "subject": "Subject Name",
       "question": "Question text here?",
       "options": ["A) Option 1", "B) Option 2", "C) Option 3", "D) Option 4"],
       "answer": "A) Option 1",
-      "explanation": "Brief explanation of why this answer is correct."
+      "explanation": "Explanation here."
+    }}
+  ]
+}}
+"""
+
+
+def build_custom_mcq_prompt(test_name, topic, count=10):
+    pattern_info = get_test_pattern_info(test_name)
+    return f"""
+Generate {count} high-yield MCQs for the specific topic: "{topic}".
+
+Target Exam: {test_name}
+Exam Context: {pattern_info}
+
+Return ONLY valid JSON matching this exact structure:
+{{
+  "questions": [
+    {{
+      "subject": "{topic}",
+      "question": "Question text here?",
+      "options": ["A) Option 1", "B) Option 2", "C) Option 3", "D) Option 4"],
+      "answer": "A) Option 1",
+      "explanation": "Brief explanation of correct answer."
     }}
   ]
 }}
@@ -206,7 +244,7 @@ Return ONLY valid JSON matching this exact structure (no markdown wrapper or ext
 
 
 # ============================================================
-# SECTION 4: PDF GENERATORS (REPORTLAB)
+# SECTION 4: PDF EXPORT ENGINES
 # ============================================================
 
 
@@ -216,68 +254,8 @@ def sanitize_text(text):
     text = re.sub(r"[■▼▲─│┌┐└┘├┤┼═#`]+", "", text)
     text = text.replace("*", "")
     text = re.sub(r"\$([A-Za-z0-9_\-\+\=\s\(\)\/\.,]+)\$", r"<i>\1</i>", text)
-    text = (
-        text.replace("_c", "<sub>c</sub>")
-        .replace("_p", "<sub>p</sub>")
-        .replace("_0", "<sub>0</sub>")
-    )
-    text = (
-        text.replace(r"\epsilon", "ε")
-        .replace("ε■", "ε₀")
-        .replace(r"\approx", "≈")
-        .replace(r"\rightarrow", "→")
-    )
     text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    text = re.sub(r"&lt;i&gt;(.*?)&lt;/i&gt;", r"<i>\1</i>", text)
-    text = re.sub(r"&lt;b&gt;(.*?)&lt;/b&gt;", r"<b>\1</b>", text)
-    text = re.sub(r"&lt;sub&gt;(.*?)&lt;/sub&gt;", r"<sub>\1</sub>", text)
     return text.strip()
-
-
-def parse_markdown_table(table_lines, body_style):
-    table_data = []
-    for line in table_lines:
-        clean_line = line.strip()
-        if not clean_line or "---" in clean_line or "===" in clean_line:
-            continue
-        cols = [col.strip() for col in clean_line.strip("|").split("|")]
-        if any(cols):
-            formatted_row = [
-                Paragraph(sanitize_text(col), body_style) for col in cols
-            ]
-            table_data.append(formatted_row)
-
-    if not table_data:
-        return None
-
-    max_cols = max(len(row) for row in table_data)
-    for row in table_data:
-        while len(row) < max_cols:
-            row.append(Paragraph("", body_style))
-
-    col_width = 540.0 / max_cols
-
-    t = Table(table_data, colWidths=[col_width] * max_cols)
-    t.setStyle(
-        TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1E3A8A")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-            ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-            ("TOPPADDING", (0, 0), (-1, -1), 5),
-            ("LEFTPADDING", (0, 0), (-1, -1), 5),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-            (
-                "ROWBACKGROUNDS",
-                (0, 1),
-                (-1, -1),
-                [colors.white, colors.HexColor("#F8FAFC")],
-            ),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
-        ])
-    )
-    return t
 
 
 def generate_pdf_from_text(test_name, exam_date, roadmap_text):
@@ -290,7 +268,6 @@ def generate_pdf_from_text(test_name, exam_date, roadmap_text):
         topMargin=36,
         bottomMargin=36,
     )
-
     styles = getSampleStyleSheet()
 
     title_style = ParagraphStyle(
@@ -309,26 +286,6 @@ def generate_pdf_from_text(test_name, exam_date, roadmap_text):
         textColor=colors.HexColor("#4B5563"),
         spaceAfter=10,
     )
-    h1_style = ParagraphStyle(
-        "H1",
-        parent=styles["Heading2"],
-        fontSize=12,
-        leading=16,
-        textColor=colors.HexColor("#1E40AF"),
-        spaceBefore=10,
-        spaceAfter=4,
-        keepWithNext=True,
-    )
-    h2_style = ParagraphStyle(
-        "H2",
-        parent=styles["Heading3"],
-        fontSize=10,
-        leading=14,
-        textColor=colors.HexColor("#1F2937"),
-        spaceBefore=8,
-        spaceAfter=3,
-        keepWithNext=True,
-    )
     body_style = ParagraphStyle(
         "Body",
         parent=styles["BodyText"],
@@ -336,16 +293,6 @@ def generate_pdf_from_text(test_name, exam_date, roadmap_text):
         leading=12,
         textColor=colors.HexColor("#374151"),
         spaceAfter=3,
-    )
-    table_body_style = ParagraphStyle(
-        "TableBody", parent=body_style, fontSize=8, leading=11
-    )
-    bullet_style = ParagraphStyle(
-        "Bullet",
-        parent=body_style,
-        leftIndent=12,
-        firstLineIndent=-8,
-        spaceAfter=2,
     )
 
     story = [
@@ -363,53 +310,17 @@ def generate_pdf_from_text(test_name, exam_date, roadmap_text):
         ),
     ]
 
-    lines = roadmap_text.split("\n")
-    table_buffer = []
-
-    for line in lines:
-        raw_line = line.strip()
-
-        if "|" in raw_line and not raw_line.startswith("#"):
-            table_buffer.append(raw_line)
-            continue
-
-        if table_buffer:
-            compiled_table = parse_markdown_table(table_buffer, table_body_style)
-            if compiled_table:
-                story.append(Spacer(1, 3))
-                story.append(compiled_table)
-                story.append(Spacer(1, 5))
-            table_buffer = []
-
-        is_bullet = raw_line.startswith(("•", "-", "*", "1.", "2.", "3.", "4."))
-        clean_line = sanitize_text(raw_line)
-        if not clean_line:
-            continue
-
-        if raw_line.startswith("# "):
-            story.append(Paragraph(clean_line, title_style))
-        elif raw_line.startswith("## "):
-            story.append(Paragraph(clean_line, h1_style))
-        elif raw_line.startswith("### ") or raw_line.startswith("#### "):
-            story.append(Paragraph(clean_line, h2_style))
-        elif is_bullet:
-            clean_bullet_text = re.sub(r"^[\•\*\-\d\.\s]+", "", clean_line)
-            story.append(Paragraph(f"• {clean_bullet_text}", bullet_style))
-        else:
+    for line in roadmap_text.split("\n"):
+        clean_line = sanitize_text(line)
+        if clean_line:
             story.append(Paragraph(clean_line, body_style))
-
-    if table_buffer:
-        compiled_table = parse_markdown_table(table_buffer, table_body_style)
-        if compiled_table:
-            story.append(compiled_table)
 
     doc.build(story)
     buffer.seek(0)
     return buffer.getvalue()
 
 
-def generate_mcqs_pdf(test_name, mcq_list):
-    """Generates a downloadable PDF file containing practice MCQs, answer key, and explanations."""
+def generate_mcqs_pdf(title, test_name, mcq_list):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer,
@@ -419,7 +330,6 @@ def generate_mcqs_pdf(test_name, mcq_list):
         topMargin=36,
         bottomMargin=36,
     )
-
     styles = getSampleStyleSheet()
 
     title_style = ParagraphStyle(
@@ -469,9 +379,7 @@ def generate_mcqs_pdf(test_name, mcq_list):
     )
 
     story = [
-        Paragraph(
-            f"{test_name} — Topic-Wise Practice MCQ Bank", title_style
-        ),
+        Paragraph(f"{test_name} — {title}", title_style),
         Paragraph(
             f"<b>Total Questions:</b> {len(mcq_list)} &nbsp;|&nbsp;"
             f" <b>Generated Date:</b> {date.today().strftime('%d %B %Y')}",
@@ -486,17 +394,15 @@ def generate_mcqs_pdf(test_name, mcq_list):
     ]
 
     for idx, q in enumerate(mcq_list):
-        subject_tag = q.get("subject", "General Topic")
         story.append(
             Paragraph(
-                f"<b>Q{idx+1} [{subject_tag}]:</b> {sanitize_text(q['question'])}",
+                f"<b>Q{idx+1} [{q.get('subject', 'General')}]:</b>"
+                f" {sanitize_text(q['question'])}",
                 q_style,
             )
         )
-
         for opt in q.get("options", []):
             story.append(Paragraph(f"• {sanitize_text(opt)}", opt_style))
-
         story.append(Spacer(1, 2))
         story.append(
             Paragraph(
@@ -535,52 +441,48 @@ with st.sidebar:
             "NUST NET",
             "FAST",
             "NTS NAT",
-            "Custom / Other Entrance Test",
+            "Custom Entrance Test",
         ],
     )
 
     custom_test = ""
-    if target_test == "Custom / Other Entrance Test":
+    if target_test == "Custom Entrance Test":
         custom_test = st.text_input(
-            "Enter Test Name", placeholder="e.g., GIKI, PIEAS, UET Taxila"
+            "Enter Test Name", placeholder="e.g. GIKI, PIEAS"
         )
 
     target_date = st.date_input("Target Exam Date", min_value=date.today())
-
     preparation_level = st.selectbox(
         "Current Preparation Level", ["Beginner", "Intermediate", "Advanced"]
     )
-
     study_hours = st.slider(
         "Daily Available Study Hours", min_value=1, max_value=16, value=6
     )
 
     st.divider()
 
-    # Automatically handle secret API key loading for Groq
     auto_key = get_groq_api_key()
     if auto_key:
         st.success("⚡ Groq API Key connected from secrets.")
     else:
-        st.error(
-            "⚠️ No API key found in `.streamlit/secrets.toml` under"
-            " `GROQ_API_KEY`."
-        )
+        st.error("⚠️ GROQ_API_KEY missing in secrets.")
 
     generate_button = st.button(
         "🚀 Generate Roadmap", type="primary", use_container_width=True
     )
 
 # ============================================================
-# SECTION 6: METRICS & CALCULATIONS
+# SECTION 6: INITIAL STATE INITIALIZATION
 # ============================================================
+
+if "test_history" not in st.session_state:
+    st.session_state["test_history"] = []
 
 today = date.today()
 remaining_days = (target_date - today).days
-
 selected_test = (
     custom_test.strip()
-    if target_test == "Custom / Other Entrance Test"
+    if target_test == "Custom Entrance Test"
     else target_test
 )
 
@@ -593,26 +495,17 @@ with col3:
     st.metric("Preparation Level", preparation_level)
 
 # ============================================================
-# SECTION 7: ROADMAP GENERATION LOGIC (GROQ API CALL)
+# SECTION 7: ROADMAP GENERATION
 # ============================================================
 
 if generate_button:
     current_key = get_groq_api_key()
-
     if not current_key:
-        st.error("❌ No Groq API key configured in secrets.")
-        st.stop()
-
-    if target_date <= today:
-        st.error("❌ Please select a future exam date.")
-        st.stop()
-
-    if target_test == "Custom / Other Entrance Test" and not custom_test.strip():
-        st.error("❌ Please enter your custom test name.")
+        st.error("❌ API Key missing.")
         st.stop()
 
     try:
-        with st.spinner("⚡ Generating your roadmap using Groq..."):
+        with st.spinner("⚡ Generating your personalized roadmap..."):
             client = Groq(api_key=current_key)
             completion = client.chat.completions.create(
                 model=DEFAULT_GROQ_MODEL,
@@ -632,44 +525,33 @@ if generate_button:
             )
             roadmap = completion.choices[0].message.content
 
-        if not roadmap:
-            st.error("❌ Groq returned an empty response.")
-            st.stop()
-
         st.session_state["roadmap"] = roadmap
         st.session_state["test"] = selected_test
         st.session_state["exam_date"] = target_date.strftime("%d %B %Y")
-        st.session_state["topic_mcqs"] = []
-        st.session_state["extracted_topics"] = extract_topics_from_roadmap(
-            roadmap
-        )
+        st.session_state["extracted_topics"] = extract_clean_topics(roadmap)
+        st.session_state["mock_tests"] = {}
 
     except Exception as error:
-        st.error(f"❌ Unable to generate the roadmap via Groq: {error}")
+        st.error(f"❌ Failed to generate roadmap: {error}")
 
 # ============================================================
-# SECTION 8: MAIN CONTENT TABS (2 TABS ONLY)
+# SECTION 8: 4 MAIN NAVIGATION TABS
 # ============================================================
 
 if "roadmap" in st.session_state:
-    st.success(
-        f"Roadmap ready for {st.session_state['test']} — Exam Date:"
-        f" {st.session_state['exam_date']}"
-    )
-
-    tab1, tab2 = st.tabs([
+    tab1, tab2, tab3, tab4 = st.tabs([
         "🗺️ Preparation Roadmap",
-        "📝 Comprehensive Topic MCQs",
+        "🧪 Roadmap Mock Tests",
+        "🎯 Custom / Topic MCQs",
+        "📊 Progress & Analytics",
     ])
 
     # ------------------------------------------------------------
-    # TAB 1: ROADMAP VIEW & DOWNLOAD
+    # TAB 1: ROADMAP VIEW
     # ------------------------------------------------------------
     with tab1:
         st.markdown(st.session_state["roadmap"])
         st.divider()
-        st.subheader("📥 Download Roadmap")
-
         try:
             pdf_bytes = generate_pdf_from_text(
                 st.session_state["test"],
@@ -677,187 +559,282 @@ if "roadmap" in st.session_state:
                 st.session_state["roadmap"],
             )
             st.download_button(
-                "📄 Download Complete PDF Roadmap",
+                "📄 Download Complete Roadmap PDF",
                 pdf_bytes,
                 file_name=f"{st.session_state['test'].replace(' ', '_')}_Roadmap.pdf",
                 mime="application/pdf",
                 type="primary",
-                use_container_width=True,
             )
         except Exception as pdf_err:
-            st.error(f"Failed to compile PDF: {pdf_err}")
+            st.error(f"Error compiling PDF: {pdf_err}")
 
     # ------------------------------------------------------------
-    # TAB 2: COMPREHENSIVE TOPIC MCQS (PATTERN ALIGNED & DOWNLOADABLE)
+    # TAB 2: SCHEDULED ROADMAP MOCK TESTS (TEST 1, TEST 2, ...)
     # ------------------------------------------------------------
     with tab2:
-        st.subheader("🎯 Pattern-Aligned Topic-Wise MCQ Practice")
+        st.subheader("🧪 Scheduled Roadmap Mock Tests")
         st.caption(
-            f"Generates questions following the official pattern structure for"
-            f" **{st.session_state['test']}**."
+            "Attempt structured mock tests corresponding to your roadmap"
+            " milestone phases."
         )
 
-        extracted_topics = st.session_state.get("extracted_topics", [])
-        topic_options = extracted_topics + ["Custom Specific Topic"]
+        test_num = st.selectbox(
+            "Select Scheduled Test Stage",
+            options=[1, 2, 3, 4, 5],
+            format_func=lambda x: f"Test {x} (Phase {x} Evaluation)",
+        )
 
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            selected_topic_choice = st.selectbox(
-                "Select Subject / Module from your Roadmap",
-                options=topic_options,
-            )
+        mock_size = st.slider("Number of Questions", 5, 25, 10, key="mock_sz")
 
-            if selected_topic_choice == "Custom Specific Topic":
-                quiz_subject = st.text_input(
-                    "Enter Specific Topic Name",
-                    placeholder="e.g. Organic Chemistry - Reaction Mechanisms",
-                )
-            else:
-                quiz_subject = selected_topic_choice
+        if st.button(
+            f"⚡ Generate Test {test_num}",
+            type="primary",
+            use_container_width=True,
+        ):
+            current_key = get_groq_api_key()
+            try:
+                with st.spinner(f"Generating Test {test_num}..."):
+                    client = Groq(api_key=current_key)
+                    res = client.chat.completions.create(
+                        model=DEFAULT_GROQ_MODEL,
+                        response_format={"type": "json_object"},
+                        messages=[
+                            {
+                                "role": "user",
+                                "content": build_roadmap_mock_prompt(
+                                    st.session_state["test"],
+                                    test_num,
+                                    mock_size,
+                                ),
+                            }
+                        ],
+                    )
+                    data = json.loads(res.choices[0].message.content)
+                    st.session_state["current_mock"] = {
+                        "name": f"Test {test_num}",
+                        "questions": data.get("questions", []),
+                    }
+            except Exception as e:
+                st.error(f"Error generating test: {e}")
 
-        with col2:
-            mcq_batch_size = st.select_slider(
-                "MCQs to Generate", options=[5, 10, 15, 20, 25]
-            )
-
-        btn_col1, btn_col2 = st.columns(2)
-        with btn_col1:
-            gen_batch = st.button(
-                "➕ Generate Practice MCQs",
-                type="primary",
-                use_container_width=True,
-            )
-        with btn_col2:
-            clear_pool = st.button(
-                "🗑️ Clear MCQ Pool",
-                type="secondary",
-                use_container_width=True,
-            )
-
-        if clear_pool:
-            st.session_state["topic_mcqs"] = []
-            st.rerun()
-
-        if gen_batch:
-            if not quiz_subject.strip():
-                st.error("Please specify or select a topic to practice.")
-            else:
-                current_key = get_groq_api_key()
-                try:
-                    with st.spinner(
-                        f"Generating {mcq_batch_size} pattern-aligned MCQs for"
-                        f" '{quiz_subject}' using Groq..."
-                    ):
-                        client = Groq(api_key=current_key)
-                        mcq_res = client.chat.completions.create(
-                            model=DEFAULT_GROQ_MODEL,
-                            response_format={"type": "json_object"},
-                            messages=[
-                                {
-                                    "role": "user",
-                                    "content": build_mcq_prompt(
-                                        st.session_state["test"],
-                                        quiz_subject,
-                                        mcq_batch_size,
-                                    ),
-                                }
-                            ],
-                            temperature=0.4,
-                        )
-
-                        clean_json = mcq_res.choices[0].message.content.strip()
-                        if clean_json.startswith("```"):
-                            clean_json = clean_json.split("\n", 1)[1].rsplit(
-                                "\n", 1
-                            )[0]
-
-                        new_questions = json.loads(clean_json).get(
-                            "questions", []
-                        )
-
-                        if "topic_mcqs" not in st.session_state:
-                            st.session_state["topic_mcqs"] = []
-
-                        for q in new_questions:
-                            q["subject"] = quiz_subject
-
-                        st.session_state["topic_mcqs"].extend(new_questions)
-                        st.success(
-                            f"Added {len(new_questions)} MCQs for"
-                            f" '{quiz_subject}'! Total practice questions:"
-                            f" {len(st.session_state['topic_mcqs'])}."
-                        )
-
-                except Exception as e:
-                    st.error(f"Failed to generate practice MCQs: {e}")
-
-        # Render active MCQ bank & PDF Download option
-        if "topic_mcqs" in st.session_state and st.session_state["topic_mcqs"]:
-            questions = st.session_state["topic_mcqs"]
+        if "current_mock" in st.session_state:
+            mock = st.session_state["current_mock"]
             st.divider()
+            st.markdown(f"### 📝 {mock['name']} in Progress")
 
-            col_a, col_b = st.columns([2, 1])
-            with col_a:
-                st.markdown(
-                    f"### 📋 Active Practice MCQ Pool ({len(questions)} Questions)"
-                )
-            with col_b:
-                try:
-                    mcq_pdf_bytes = generate_mcqs_pdf(
-                        st.session_state["test"], questions
-                    )
-                    st.download_button(
-                        "📄 Download MCQs as PDF",
-                        mcq_pdf_bytes,
-                        file_name=f"{st.session_state['test'].replace(' ', '_')}_Practice_MCQs.pdf",
-                        mime="application/pdf",
-                        type="secondary",
-                        use_container_width=True,
-                    )
-                except Exception as mcq_pdf_err:
-                    st.error(f"Error compiling MCQ PDF: {mcq_pdf_err}")
-
-            with st.form("interactive_quiz_form"):
-                user_answers = {}
-                for idx, q in enumerate(questions):
+            with st.form("mock_quiz_form"):
+                answers = {}
+                for idx, q in enumerate(mock["questions"]):
                     st.markdown(
                         f"**Q{idx+1} [{q.get('subject', 'General')}]:"
                         f" {q['question']}**"
                     )
-                    user_answers[idx] = st.radio(
-                        "Options:",
+                    answers[idx] = st.radio(
+                        "Options",
                         q["options"],
-                        key=f"q_pool_{idx}",
+                        key=f"mock_q_{idx}",
                         index=None,
                         label_visibility="collapsed",
                     )
                     st.write("")
 
-                submitted = st.form_submit_button("Submit & Evaluate Answers")
+                submit_mock = st.form_submit_button("Submit Test")
 
-            if submitted:
+            if submit_mock:
                 score = 0
-                st.divider()
-                st.subheader("📊 Evaluation & Explanations")
-
-                for idx, q in enumerate(questions):
-                    selected = user_answers.get(idx)
-                    correct = q["answer"]
-
-                    if selected == correct:
+                for idx, q in enumerate(mock["questions"]):
+                    if answers.get(idx) == q["answer"]:
                         score += 1
-                        st.success(f"**Q{idx+1}**: Correct! ({correct})")
-                    else:
-                        st.error(
-                            f"**Q{idx+1}**: Incorrect. Selected:"
-                            f" '{selected or 'No Answer'}'. Correct Answer:"
-                            f" **{correct}**"
+
+                total = len(mock["questions"])
+                percentage = round((score / total) * 100, 1)
+
+                st.session_state["test_history"].append({
+                    "test_name": mock["name"],
+                    "score": score,
+                    "total": total,
+                    "percentage": percentage,
+                    "date": date.today().strftime("%Y-%m-%d"),
+                })
+
+                st.success(f"🎉 Completed {mock['name']}!")
+                st.metric("Your Score", f"{score} / {total}", f"{percentage}%")
+
+                with st.expander("🔍 Review Detailed Explanations"):
+                    for idx, q in enumerate(mock["questions"]):
+                        st.write(f"**Q{idx+1}: {q['question']}**")
+                        st.write(f"Your Answer: {answers.get(idx)}")
+                        st.write(f"Correct Answer: {q['answer']}")
+                        st.caption(f"Explanation: {q['explanation']}")
+                        st.divider()
+
+    # ------------------------------------------------------------
+    # TAB 3: CUSTOM / TOPIC MCQS
+    # ------------------------------------------------------------
+    with tab3:
+        st.subheader("🎯 Custom & Topic-Wise MCQ Practice")
+        st.caption(
+            "Select extracted topics from your roadmap or type any specific"
+            " topic manually."
+        )
+
+        clean_topics = st.session_state.get("extracted_topics", [])
+        topic_mode = st.radio(
+            "Topic Selection Mode",
+            ["Select from Roadmap Topics", "Enter Custom Topic Manually"],
+            horizontal=True,
+        )
+
+        if topic_mode == "Select from Roadmap Topics":
+            selected_topic = st.selectbox(
+                "Select Topic", options=clean_topics
+            )
+        else:
+            selected_topic = st.text_input(
+                "Enter Custom Topic",
+                placeholder="e.g. Organic Chemistry Reactions, Thermodynamics",
+            )
+
+        custom_count = st.slider("MCQs to Generate", 5, 20, 10, key="custom_cnt")
+
+        if st.button(
+            "➕ Generate Custom Topic MCQs",
+            type="primary",
+            use_container_width=True,
+        ):
+            if not selected_topic or not selected_topic.strip():
+                st.error("Please specify a valid topic.")
+            else:
+                current_key = get_groq_api_key()
+                try:
+                    with st.spinner(
+                        f"Generating MCQs for '{selected_topic}'..."
+                    ):
+                        client = Groq(api_key=current_key)
+                        res = client.chat.completions.create(
+                            model=DEFAULT_GROQ_MODEL,
+                            response_format={"type": "json_object"},
+                            messages=[
+                                {
+                                    "role": "user",
+                                    "content": build_custom_mcq_prompt(
+                                        st.session_state["test"],
+                                        selected_topic,
+                                        custom_count,
+                                    ),
+                                }
+                            ],
                         )
+                        data = json.loads(res.choices[0].message.content)
+                        st.session_state["custom_mcqs"] = {
+                            "topic": selected_topic,
+                            "questions": data.get("questions", []),
+                        }
+                except Exception as e:
+                    st.error(f"Failed to generate topic MCQs: {e}")
 
-                    st.caption(f"💡 Explanation: {q['explanation']}")
-                    st.write("---")
+        if "custom_mcqs" in st.session_state:
+            c_data = st.session_state["custom_mcqs"]
+            st.divider()
 
-                percentage = round((score / len(questions)) * 100, 1)
+            col_t, col_d = st.columns([3, 1])
+            with col_t:
+                st.markdown(f"### 📋 Practice: {c_data['topic']}")
+            with col_d:
+                try:
+                    pdf_data = generate_mcqs_pdf(
+                        f"Topic: {c_data['topic']}",
+                        st.session_state["test"],
+                        c_data["questions"],
+                    )
+                    st.download_button(
+                        "📄 Download MCQs PDF",
+                        pdf_data,
+                        file_name=f"{c_data['topic'].replace(' ', '_')}_MCQs.pdf",
+                        mime="application/pdf",
+                    )
+                except Exception as pdf_err:
+                    st.error(f"PDF Error: {pdf_err}")
+
+            with st.form("custom_topic_form"):
+                topic_answers = {}
+                for idx, q in enumerate(c_data["questions"]):
+                    st.markdown(f"**Q{idx+1}: {q['question']}**")
+                    topic_answers[idx] = st.radio(
+                        "Options",
+                        q["options"],
+                        key=f"custom_q_{idx}",
+                        index=None,
+                        label_visibility="collapsed",
+                    )
+                    st.write("")
+
+                submit_custom = st.form_submit_button("Evaluate Answers")
+
+            if submit_custom:
+                c_score = 0
+                for idx, q in enumerate(c_data["questions"]):
+                    if topic_answers.get(idx) == q["answer"]:
+                        c_score += 1
+
+                c_total = len(c_data["questions"])
+                c_perc = round((c_score / c_total) * 100, 1)
+
+                st.session_state["test_history"].append({
+                    "test_name": f"Topic: {c_data['topic']}",
+                    "score": c_score,
+                    "total": c_total,
+                    "percentage": c_perc,
+                    "date": date.today().strftime("%Y-%m-%d"),
+                })
+
                 st.info(
-                    f"**Final Score:** {score} / {len(questions)} ({percentage}%)"
+                    f"**Score:** {c_score} / {c_total} ({c_perc}%) — Recorded in"
+                    " Progress Tab!"
                 )
+
+                with st.expander("💡 View Explanations"):
+                    for idx, q in enumerate(c_data["questions"]):
+                        st.write(f"**Q{idx+1}: {q['question']}**")
+                        st.write(f"Your Answer: {topic_answers.get(idx)}")
+                        st.write(f"Correct Answer: {q['answer']}")
+                        st.caption(f"Explanation: {q['explanation']}")
+                        st.divider()
+
+    # ------------------------------------------------------------
+    # TAB 4: PROGRESS & ANALYTICS
+    # ------------------------------------------------------------
+    with tab4:
+        st.subheader("📊 Performance Analytics & Progress Tracker")
+
+        history = st.session_state.get("test_history", [])
+
+        if not history:
+            st.info(
+                "No attempt history found yet. Complete mock tests in Tab 2 or"
+                " topic practice in Tab 3 to see your progress metrics here!"
+            )
+        else:
+            total_tests = len(history)
+            total_questions = sum(h["total"] for h in history)
+            total_correct = sum(h["score"] for h in history)
+            avg_accuracy = round(
+                (total_correct / total_questions) * 100
+                if total_questions > 0
+                else 0,
+                1,
+            )
+
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Tests Completed", total_tests)
+            m2.metric("Questions Attempted", total_questions)
+            m3.metric("Correct Answers", total_correct)
+            m4.metric("Overall Accuracy", f"{avg_accuracy}%")
+
+            st.divider()
+            st.markdown("### 📜 Test History Log")
+            st.dataframe(history, use_container_width=True)
+
+            if st.button("🗑️ Reset Progress History"):
+                st.session_state["test_history"] = []
+                st.rerun()
