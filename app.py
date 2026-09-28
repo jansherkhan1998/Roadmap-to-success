@@ -389,7 +389,7 @@ with st.sidebar:
     target_test = st.selectbox(
         "Target Test",
         [
-            "KMU CAT",
+            "KMU-CAT",
             "MDCAT",
             "ECAT / Engineering Tests",
             "ISSB Initial Computer Test",
@@ -477,7 +477,7 @@ if generate_button:
         with st.spinner("🤖 Generating your roadmap using Gemini..."):
             client = genai.Client(api_key=current_key)
             response = client.models.generate_content(
-                model="gemini-3.5-flash",
+                model="gemini-3.6-flash",
                 contents=build_roadmap_prompt(
                     selected_test,
                     target_date.strftime("%d %B %Y"),
