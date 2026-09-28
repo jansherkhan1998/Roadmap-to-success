@@ -18,7 +18,7 @@ from reportlab.platypus import (
 )
 import streamlit as st
 
-# Default Groq model (Llama 3.3 70B Versatile is recommended for fast, high-quality reasoning)
+# Default Groq model
 DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b"
 
 # ============================================================
@@ -101,8 +101,32 @@ def get_test_pattern_info(test_name):
     )
 
 
+def extract_topics_from_roadmap(roadmap_text):
+    """Parses subjects and key high-yield topics directly from generated markdown roadmap."""
+    topics = []
+    lines = roadmap_text.split("\n")
+    for line in lines:
+        line_clean = line.strip()
+        # Look for headers, bullet points, or list items that mention subjects or topics
+        if line_clean.startswith(("-", "*", "•")) or re.match(
+            r"^\d+\.", line_clean
+        ):
+            item = re.sub(r"^[\•\*\-\d\.\s]+", "", line_clean).strip()
+            if len(item) > 3 and len(item) < 80 and not item.startswith("Phase"):
+                topics.append(item)
+
+    default_list = [
+        "Biology - General & Applied",
+        "Chemistry - Organic & Inorganic",
+        "Physics - Core Principles",
+        "English - Grammar & Vocabulary",
+        "Logical Reasoning & Analytical",
+    ]
+    return list(dict.fromkeys(topics)) if topics else default_list
+
+
 # ============================================================
-# SECTION 3: GROQ PROMPT GENERATORS
+# SECTION 3: PROMPT GENERATORS
 # ============================================================
 
 
@@ -128,7 +152,7 @@ You MUST strictly adhere to the exact official paper pattern provided above.
 Include:
 1. Executive summary
 2. Official Exam structure & Exact Section Distribution
-3. High-yield subjects and topics
+3. High-yield subjects and topics (Explicitly list distinct subjects and sub-topics clearly using bullet points)
 4. Phase-wise plan:
    - Phase 1: Conceptual Foundation
    - Phase 2: Targeted Revision & Gaps
@@ -155,17 +179,19 @@ Today's date is {date.today()}.
 def build_mcq_prompt(test_name, subject, count=10):
     pattern_info = get_test_pattern_info(test_name)
     return f"""
-Generate {count} unique, high-yield, exam-standard multiple choice questions (MCQs) for Pakistani entrance test preparation matching the exact official syllabus and pattern.
+Generate {count} unique, high-yield, exam-standard multiple choice questions (MCQs) for Pakistani entrance test preparation.
 
-Target Exam: {test_name} ({pattern_info})
-Subject / Topic: {subject}
+Target Exam: {test_name}
+Official Exam Pattern & Distribution Context: {pattern_info}
+Selected Subject / Topic: {subject}
 
-Requirements:
-1. Ensure conceptual depth and variety (conceptual, numerical, definition-based).
-2. Exactly 4 clear options per MCQ (A, B, C, D).
-3. Clear explanations for the correct options.
+STRICT REQUIREMENTS:
+1. Questions MUST strictly follow the exact difficulty, question style, and conceptual depth of {test_name}.
+2. Ensure high-yield topics are prioritized according to the exam pattern (e.g., conceptual questions, formula applications, or logical reasoning as per section weightage).
+3. Exactly 4 distinct options per MCQ (A, B, C, D).
+4. Provide a clear and educational explanation for the correct choice.
 
-Return ONLY valid JSON wrapped in no extra text or markdown formatting:
+Return ONLY valid JSON matching this exact structure (no markdown wrapper or extra text outside JSON):
 {{
   "questions": [
     {{
@@ -180,7 +206,7 @@ Return ONLY valid JSON wrapped in no extra text or markdown formatting:
 
 
 # ============================================================
-# SECTION 4: PDF GENERATOR (REPORTLAB)
+# SECTION 4: PDF GENERATORS (REPORTLAB)
 # ============================================================
 
 
@@ -382,6 +408,115 @@ def generate_pdf_from_text(test_name, exam_date, roadmap_text):
     return buffer.getvalue()
 
 
+def generate_mcqs_pdf(test_name, mcq_list):
+    """Generates a downloadable PDF file containing practice MCQs, answer key, and explanations."""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        rightMargin=36,
+        leftMargin=36,
+        topMargin=36,
+        bottomMargin=36,
+    )
+
+    styles = getSampleStyleSheet()
+
+    title_style = ParagraphStyle(
+        "DocTitle",
+        parent=styles["Heading1"],
+        fontSize=16,
+        leading=20,
+        textColor=colors.HexColor("#1E3A8A"),
+        spaceAfter=4,
+    )
+    subtitle_style = ParagraphStyle(
+        "DocSubTitle",
+        parent=styles["Normal"],
+        fontSize=10,
+        leading=14,
+        textColor=colors.HexColor("#4B5563"),
+        spaceAfter=10,
+    )
+    q_style = ParagraphStyle(
+        "QuestionText",
+        parent=styles["Heading3"],
+        fontSize=10,
+        leading=14,
+        textColor=colors.HexColor("#1E40AF"),
+        spaceBefore=8,
+        spaceAfter=4,
+        keepWithNext=True,
+    )
+    opt_style = ParagraphStyle(
+        "OptionText",
+        parent=styles["Normal"],
+        fontSize=9,
+        leading=13,
+        textColor=colors.HexColor("#374151"),
+        leftIndent=12,
+        spaceAfter=2,
+    )
+    ans_style = ParagraphStyle(
+        "AnswerText",
+        parent=styles["Normal"],
+        fontSize=9,
+        leading=13,
+        textColor=colors.HexColor("#065F46"),
+        leftIndent=12,
+        spaceBefore=2,
+        spaceAfter=2,
+    )
+
+    story = [
+        Paragraph(
+            f"{test_name} — Topic-Wise Practice MCQ Bank", title_style
+        ),
+        Paragraph(
+            f"<b>Total Questions:</b> {len(mcq_list)} &nbsp;|&nbsp;"
+            f" <b>Generated Date:</b> {date.today().strftime('%d %B %Y')}",
+            subtitle_style,
+        ),
+        HRFlowable(
+            width="100%",
+            thickness=1.5,
+            color=colors.HexColor("#1E3A8A"),
+            spaceAfter=10,
+        ),
+    ]
+
+    for idx, q in enumerate(mcq_list):
+        subject_tag = q.get("subject", "General Topic")
+        story.append(
+            Paragraph(
+                f"<b>Q{idx+1} [{subject_tag}]:</b> {sanitize_text(q['question'])}",
+                q_style,
+            )
+        )
+
+        for opt in q.get("options", []):
+            story.append(Paragraph(f"• {sanitize_text(opt)}", opt_style))
+
+        story.append(Spacer(1, 2))
+        story.append(
+            Paragraph(
+                f"<b>Correct Answer:</b> {sanitize_text(q['answer'])}",
+                ans_style,
+            )
+        )
+        story.append(
+            Paragraph(
+                f"<b>Explanation:</b> {sanitize_text(q['explanation'])}",
+                opt_style,
+            )
+        )
+        story.append(Spacer(1, 6))
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
 # ============================================================
 # SECTION 5: SIDEBAR CONFIGURATION
 # ============================================================
@@ -505,6 +640,9 @@ if generate_button:
         st.session_state["test"] = selected_test
         st.session_state["exam_date"] = target_date.strftime("%d %B %Y")
         st.session_state["topic_mcqs"] = []
+        st.session_state["extracted_topics"] = extract_topics_from_roadmap(
+            roadmap
+        )
 
     except Exception as error:
         st.error(f"❌ Unable to generate the roadmap via Groq: {error}")
@@ -550,21 +688,33 @@ if "roadmap" in st.session_state:
             st.error(f"Failed to compile PDF: {pdf_err}")
 
     # ------------------------------------------------------------
-    # TAB 2: COMPREHENSIVE TOPIC MCQS (GROQ API CALL)
+    # TAB 2: COMPREHENSIVE TOPIC MCQS (PATTERN ALIGNED & DOWNLOADABLE)
     # ------------------------------------------------------------
     with tab2:
-        st.subheader("🎯 Extensive Topic-Wise MCQ Practice")
+        st.subheader("🎯 Pattern-Aligned Topic-Wise MCQ Practice")
         st.caption(
-            "Generate lots of targeted practice MCQs for any subject or topic"
-            " mentioned in your roadmap."
+            f"Generates questions following the official pattern structure for"
+            f" **{st.session_state['test']}**."
         )
+
+        extracted_topics = st.session_state.get("extracted_topics", [])
+        topic_options = extracted_topics + ["Custom Specific Topic"]
 
         col1, col2 = st.columns([2, 1])
         with col1:
-            quiz_subject = st.text_input(
-                "Subject / Specific Topic",
-                placeholder="e.g. Biology - Cell Structure, Chemistry - Stoichiometry, Physics - Vectors",
+            selected_topic_choice = st.selectbox(
+                "Select Subject / Module from your Roadmap",
+                options=topic_options,
             )
+
+            if selected_topic_choice == "Custom Specific Topic":
+                quiz_subject = st.text_input(
+                    "Enter Specific Topic Name",
+                    placeholder="e.g. Organic Chemistry - Reaction Mechanisms",
+                )
+            else:
+                quiz_subject = selected_topic_choice
+
         with col2:
             mcq_batch_size = st.select_slider(
                 "MCQs to Generate", options=[5, 10, 15, 20, 25]
@@ -573,13 +723,13 @@ if "roadmap" in st.session_state:
         btn_col1, btn_col2 = st.columns(2)
         with btn_col1:
             gen_batch = st.button(
-                "➕ Generate MCQ Practice Set",
+                "➕ Generate Practice MCQs",
                 type="primary",
                 use_container_width=True,
             )
         with btn_col2:
             clear_pool = st.button(
-                "🗑️ Clear Practice Set",
+                "🗑️ Clear MCQ Pool",
                 type="secondary",
                 use_container_width=True,
             )
@@ -590,13 +740,13 @@ if "roadmap" in st.session_state:
 
         if gen_batch:
             if not quiz_subject.strip():
-                st.error("Please specify a subject or topic to practice.")
+                st.error("Please specify or select a topic to practice.")
             else:
                 current_key = get_groq_api_key()
                 try:
                     with st.spinner(
-                        f"Generating {mcq_batch_size} practice MCQs for"
-                        f" {quiz_subject} using Groq..."
+                        f"Generating {mcq_batch_size} pattern-aligned MCQs for"
+                        f" '{quiz_subject}' using Groq..."
                     ):
                         client = Groq(api_key=current_key)
                         mcq_res = client.chat.completions.create(
@@ -634,20 +784,38 @@ if "roadmap" in st.session_state:
                         st.session_state["topic_mcqs"].extend(new_questions)
                         st.success(
                             f"Added {len(new_questions)} MCQs for"
-                            f" '{quiz_subject}'! Total available practice"
-                            f" questions: {len(st.session_state['topic_mcqs'])}."
+                            f" '{quiz_subject}'! Total practice questions:"
+                            f" {len(st.session_state['topic_mcqs'])}."
                         )
 
                 except Exception as e:
                     st.error(f"Failed to generate practice MCQs: {e}")
 
-        # Render active MCQ bank
+        # Render active MCQ bank & PDF Download option
         if "topic_mcqs" in st.session_state and st.session_state["topic_mcqs"]:
             questions = st.session_state["topic_mcqs"]
             st.divider()
-            st.markdown(
-                f"### 📋 Active MCQ Practice Bank ({len(questions)} Questions)"
-            )
+
+            col_a, col_b = st.columns([2, 1])
+            with col_a:
+                st.markdown(
+                    f"### 📋 Active Practice MCQ Pool ({len(questions)} Questions)"
+                )
+            with col_b:
+                try:
+                    mcq_pdf_bytes = generate_mcqs_pdf(
+                        st.session_state["test"], questions
+                    )
+                    st.download_button(
+                        "📄 Download MCQs as PDF",
+                        mcq_pdf_bytes,
+                        file_name=f"{st.session_state['test'].replace(' ', '_')}_Practice_MCQs.pdf",
+                        mime="application/pdf",
+                        type="secondary",
+                        use_container_width=True,
+                    )
+                except Exception as mcq_pdf_err:
+                    st.error(f"Error compiling MCQ PDF: {mcq_pdf_err}")
 
             with st.form("interactive_quiz_form"):
                 user_answers = {}
@@ -670,7 +838,7 @@ if "roadmap" in st.session_state:
             if submitted:
                 score = 0
                 st.divider()
-                st.subheader("📊 Practice Results & Detailed Explanations")
+                st.subheader("📊 Evaluation & Explanations")
 
                 for idx, q in enumerate(questions):
                     selected = user_answers.get(idx)
@@ -681,7 +849,7 @@ if "roadmap" in st.session_state:
                         st.success(f"**Q{idx+1}**: Correct! ({correct})")
                     else:
                         st.error(
-                            f"**Q{idx+1}**: Incorrect. You selected"
+                            f"**Q{idx+1}**: Incorrect. Selected:"
                             f" '{selected or 'No Answer'}'. Correct Answer:"
                             f" **{correct}**"
                         )
