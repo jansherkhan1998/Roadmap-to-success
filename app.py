@@ -33,8 +33,8 @@ st.set_page_config(
 
 st.title("📚 Entrance Test Preparation Roadmap & Practice Engine")
 st.write(
-    "Generate a personalized preparation roadmap, attempt scheduled mock"
-    " tests, practice topic-wise MCQs, and track your overall progress."
+    "Generate a personalized preparation roadmap, attempt structured mock"
+    " tests (up to 60 MCQs), practice topic-wise MCQs, and track your progress."
 )
 
 # ============================================================
@@ -118,7 +118,6 @@ def extract_clean_topics(roadmap_text):
     for line in lines:
         line_clean = line.strip()
 
-        # Skip metadata header lines
         if any(
             k in line_clean.lower()
             for k in ["target date", "days left", "current level", "study time"]
@@ -130,7 +129,6 @@ def extract_clean_topics(roadmap_text):
         ):
             item = clean_extracted_topic(line_clean)
             item = re.sub(r"^[\•\*\-\d\.\s]+", "", item).strip()
-            # Split off lengthy hyphenated descriptions
             if "–" in item:
                 item = item.split("–")[0].strip()
             elif "-" in item and len(item.split("-")[0].strip()) > 3:
@@ -151,7 +149,7 @@ def extract_clean_topics(roadmap_text):
 
 
 # ============================================================
-# SECTION 3: PROMPT GENERATORS
+# SECTION 3: PROMPT GENERATORS & BATCH GENERATION
 # ============================================================
 
 
@@ -241,6 +239,49 @@ Return ONLY valid JSON matching this exact structure:
   ]
 }}
 """
+
+
+def batch_generate_mcqs(
+    client, prompt_builder, test_name, identifier, total_count, is_mock=True
+):
+    """Generates MCQs safely in chunks of up to 15 to allow up to 60 MCQs without hitting token limits."""
+    all_questions = []
+    chunk_size = 15
+    chunks = [
+        chunk_size if total_count - i >= chunk_size else total_count - i
+        for i in range(0, total_count, chunk_size)
+    ]
+
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+
+    for idx, num_q in enumerate(chunks):
+        status_text.text(
+            f"⚡ Generating question batch {idx + 1} of {len(chunks)} ({len(all_questions)}/{total_count} completed)..."
+        )
+        prompt = (
+            prompt_builder(test_name, identifier, num_q)
+            if is_mock
+            else prompt_builder(test_name, identifier, num_q)
+        )
+
+        res = client.chat.completions.create(
+            model=DEFAULT_GROQ_MODEL,
+            response_format={"type": "json_object"},
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.5,
+        )
+
+        data = json.loads(res.choices[0].message.content)
+        questions = data.get("questions", [])
+        all_questions.extend(questions)
+
+        progress = (idx + 1) / len(chunks)
+        progress_bar.progress(progress)
+
+    status_text.empty()
+    progress_bar.empty()
+    return all_questions
 
 
 # ============================================================
@@ -529,13 +570,12 @@ if generate_button:
         st.session_state["test"] = selected_test
         st.session_state["exam_date"] = target_date.strftime("%d %B %Y")
         st.session_state["extracted_topics"] = extract_clean_topics(roadmap)
-        st.session_state["mock_tests"] = {}
 
     except Exception as error:
         st.error(f"❌ Failed to generate roadmap: {error}")
 
 # ============================================================
-# SECTION 8: 4 MAIN NAVIGATION TABS
+# SECTION 8: MAIN NAVIGATION TABS
 # ============================================================
 
 if "roadmap" in st.session_state:
@@ -569,58 +609,77 @@ if "roadmap" in st.session_state:
             st.error(f"Error compiling PDF: {pdf_err}")
 
     # ------------------------------------------------------------
-    # TAB 2: SCHEDULED ROADMAP MOCK TESTS (TEST 1, TEST 2, ...)
+    # TAB 2: SCHEDULED ROADMAP MOCK TESTS (UP TO 60 MCQs)
     # ------------------------------------------------------------
     with tab2:
         st.subheader("🧪 Scheduled Roadmap Mock Tests")
         st.caption(
             "Attempt structured mock tests corresponding to your roadmap"
-            " milestone phases."
+            " milestone phases (Up to 60 questions per test)."
         )
 
-        test_num = st.selectbox(
-            "Select Scheduled Test Stage",
-            options=[1, 2, 3, 4, 5],
-            format_func=lambda x: f"Test {x} (Phase {x} Evaluation)",
-        )
-
-        mock_size = st.slider("Number of Questions", 5, 25, 10, key="mock_sz")
+        col_t1, col_t2 = st.columns([2, 2])
+        with col_t1:
+            test_num = st.selectbox(
+                "Select Scheduled Test Stage",
+                options=[1, 2, 3, 4, 5],
+                format_func=lambda x: f"Test {x} (Phase {x} Evaluation)",
+            )
+        with col_t2:
+            mock_size = st.select_slider(
+                "Number of MCQs to Generate",
+                options=[5, 10, 15, 20, 30, 45, 60],
+                value=20,
+                key="mock_sz_slider",
+            )
 
         if st.button(
-            f"⚡ Generate Test {test_num}",
+            f"⚡ Generate Test {test_num} ({mock_size} MCQs)",
             type="primary",
             use_container_width=True,
         ):
             current_key = get_groq_api_key()
             try:
-                with st.spinner(f"Generating Test {test_num}..."):
-                    client = Groq(api_key=current_key)
-                    res = client.chat.completions.create(
-                        model=DEFAULT_GROQ_MODEL,
-                        response_format={"type": "json_object"},
-                        messages=[
-                            {
-                                "role": "user",
-                                "content": build_roadmap_mock_prompt(
-                                    st.session_state["test"],
-                                    test_num,
-                                    mock_size,
-                                ),
-                            }
-                        ],
-                    )
-                    data = json.loads(res.choices[0].message.content)
-                    st.session_state["current_mock"] = {
-                        "name": f"Test {test_num}",
-                        "questions": data.get("questions", []),
-                    }
+                client = Groq(api_key=current_key)
+                questions = batch_generate_mcqs(
+                    client,
+                    build_roadmap_mock_prompt,
+                    st.session_state["test"],
+                    test_num,
+                    mock_size,
+                    is_mock=True,
+                )
+                st.session_state["current_mock"] = {
+                    "name": f"Test {test_num}",
+                    "questions": questions,
+                }
             except Exception as e:
                 st.error(f"Error generating test: {e}")
 
         if "current_mock" in st.session_state:
             mock = st.session_state["current_mock"]
             st.divider()
-            st.markdown(f"### 📝 {mock['name']} in Progress")
+
+            col_h1, col_h2 = st.columns([3, 1])
+            with col_h1:
+                st.markdown(
+                    f"### 📝 {mock['name']} in Progress ({len(mock['questions'])} Questions)"
+                )
+            with col_h2:
+                try:
+                    mock_pdf_bytes = generate_mcqs_pdf(
+                        mock["name"],
+                        st.session_state["test"],
+                        mock["questions"],
+                    )
+                    st.download_button(
+                        "📄 Download Test PDF",
+                        mock_pdf_bytes,
+                        file_name=f"{st.session_state['test'].replace(' ', '_')}_{mock['name'].replace(' ', '_')}.pdf",
+                        mime="application/pdf",
+                    )
+                except Exception as pdf_err:
+                    st.error(f"Error generating PDF: {pdf_err}")
 
             with st.form("mock_quiz_form"):
                 answers = {}
@@ -669,13 +728,13 @@ if "roadmap" in st.session_state:
                         st.divider()
 
     # ------------------------------------------------------------
-    # TAB 3: CUSTOM / TOPIC MCQS
+    # TAB 3: CUSTOM / TOPIC MCQS (UP TO 60 MCQs)
     # ------------------------------------------------------------
     with tab3:
         st.subheader("🎯 Custom & Topic-Wise MCQ Practice")
         st.caption(
-            "Select extracted topics from your roadmap or type any specific"
-            " topic manually."
+            "Select topics from your roadmap or type custom subjects (Up to 60"
+            " MCQs)."
         )
 
         clean_topics = st.session_state.get("extracted_topics", [])
@@ -695,10 +754,15 @@ if "roadmap" in st.session_state:
                 placeholder="e.g. Organic Chemistry Reactions, Thermodynamics",
             )
 
-        custom_count = st.slider("MCQs to Generate", 5, 20, 10, key="custom_cnt")
+        custom_count = st.select_slider(
+            "MCQs to Generate",
+            options=[5, 10, 15, 20, 30, 45, 60],
+            value=15,
+            key="custom_cnt_slider",
+        )
 
         if st.button(
-            "➕ Generate Custom Topic MCQs",
+            f"➕ Generate {custom_count} Topic MCQs",
             type="primary",
             use_container_width=True,
         ):
@@ -707,29 +771,19 @@ if "roadmap" in st.session_state:
             else:
                 current_key = get_groq_api_key()
                 try:
-                    with st.spinner(
-                        f"Generating MCQs for '{selected_topic}'..."
-                    ):
-                        client = Groq(api_key=current_key)
-                        res = client.chat.completions.create(
-                            model=DEFAULT_GROQ_MODEL,
-                            response_format={"type": "json_object"},
-                            messages=[
-                                {
-                                    "role": "user",
-                                    "content": build_custom_mcq_prompt(
-                                        st.session_state["test"],
-                                        selected_topic,
-                                        custom_count,
-                                    ),
-                                }
-                            ],
-                        )
-                        data = json.loads(res.choices[0].message.content)
-                        st.session_state["custom_mcqs"] = {
-                            "topic": selected_topic,
-                            "questions": data.get("questions", []),
-                        }
+                    client = Groq(api_key=current_key)
+                    questions = batch_generate_mcqs(
+                        client,
+                        build_custom_mcq_prompt,
+                        st.session_state["test"],
+                        selected_topic,
+                        custom_count,
+                        is_mock=False,
+                    )
+                    st.session_state["custom_mcqs"] = {
+                        "topic": selected_topic,
+                        "questions": questions,
+                    }
                 except Exception as e:
                     st.error(f"Failed to generate topic MCQs: {e}")
 
@@ -739,7 +793,9 @@ if "roadmap" in st.session_state:
 
             col_t, col_d = st.columns([3, 1])
             with col_t:
-                st.markdown(f"### 📋 Practice: {c_data['topic']}")
+                st.markdown(
+                    f"### 📋 Practice: {c_data['topic']} ({len(c_data['questions'])} Questions)"
+                )
             with col_d:
                 try:
                     pdf_data = generate_mcqs_pdf(
